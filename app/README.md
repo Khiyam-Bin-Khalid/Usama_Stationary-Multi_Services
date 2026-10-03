@@ -4,8 +4,11 @@ One Flutter codebase covering desktop (Windows/Linux/macOS), mobile (Android/iOS
 talking to the Node/Express/MongoDB backend in `../backend`. After login it mounts one of two
 "shells" based on role:
 
-- **POS/Admin shell** (`superadmin` / `admin` / `staff`) — POS sale screen, inventory, reports,
-  and (admin/superadmin only) staff management, promotions, order management, and payment review.
+- **POS/Admin shell** (`superadmin` / `admin` / `staff`) — role-specific dashboard, POS sale
+  screen, inventory (read-only for staff, who report discrepancies instead), reports (staff: own
+  sales only), shift open/close, alerts; admin/superadmin add orders, payments, promotions and
+  discrepancy resolution; superadmin alone gets accounts & roles and the audit log. Navigation is
+  built from `Permissions` in `lib/core/roles.dart`, and the router blocks direct navigation.
 - **Storefront shell** (`customer`) — catalog browsing, cart/checkout, order tracking.
 
 ## Offline storage
@@ -41,28 +44,38 @@ Run for a specific target:
 flutter run -d windows   # or -d linux / -d macos / -d chrome / -d <android-device-id>
 ```
 
+## Storefront layout
+
+Customer pages (`features/catalog`, `cart_checkout`, `orders`, `profile`) wrap their content in
+`ResponsiveContainer` from `lib/core/responsive.dart`: a centred column capped at 1200 px with a
+16 px gutter on phones (< 600 px), 24 px on tablets (600–1023 px) and 32 px on desktop. The product
+grid picks 2 / 3 / 4 / 5 columns from the same breakpoints. Change those numbers in one place to
+retune the whole storefront. `StorefrontShell` switches between a top navigation bar and a bottom
+`NavigationBar` at the phone breakpoint.
+
+`lib/widgets/product_image.dart` is the single product-image widget (catalog, product page, cart,
+checkout, order detail, admin order detail, payment review, POS, inventory, stock movements) so a
+product's image — or the order item's stored image snapshot — looks the same everywhere.
+
 ## Payments in the UI
 
 Checkout offers all three methods the backend supports:
 - **Stripe** — opens the hosted checkout page in the browser (`url_launcher`). Only works once
   the backend has real Stripe keys configured; until then it returns a clear error.
 - **Manual receipt upload** — order is placed, then the order-detail screen lets the customer
-  pick an image (`image_picker`) to upload as proof of payment; status shows "payment under
-  review" until an admin approves/rejects it from the Admin/POS shell's Payments screen.
+  pick an image (`image_picker`) to upload as proof of payment. The uploaded receipt and its
+  review state stay visible on the order; the order sits in "Payment under review" until an admin
+  explicitly approves or rejects it from *Payment review* (or the admin order page). A rejection
+  shows the admin's reason and an "Upload corrected receipt" button.
 - **Cash on delivery** — no upfront payment step.
 
 ## Theme
 
-The whole palette derives from the brand page gradient
-`linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%)` (cream → tan). It is painted once behind
-every route by `lib/core/theme/app_background.dart` (mounted in `main.dart` via
-`MaterialApp.builder`), and every `Scaffold` is transparent so it shows through. `web/index.html`
-paints the same gradient in CSS so there is no white flash while the engine loads.
-
-Text and UI colors are deep warm browns chosen against the *darkest* stop of the gradient
-(`#e2d1c3`) so they pass WCAG AA everywhere along it — the ratios are listed in
-`lib/core/theme/app_colors.dart`. Dark mode uses the same hue family inverted (espresso →
-cocoa). `test/theme_smoke_test.dart` pumps a representative screen in both brightnesses.
+The palette is the exact brand token set in `lib/core/theme/app_colors.dart` (see the usage map
+in that file); `lib/core/theme/app_theme.dart` maps every Material component onto it and the app
+runs light-only, as the spec palette is a white-background system. `web/index.html` paints the
+same white base so there is no flash before the engine loads. `test/theme_smoke_test.dart`
+asserts the token values and that the theme hands them out.
 
 ## Not yet wired up
 

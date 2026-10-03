@@ -1,16 +1,32 @@
 import 'dart:convert';
 import 'package:drift/drift.dart';
+import '../models/sale.dart';
 import 'tables.dart';
 import 'connection/connection.dart' if (dart.library.js_interop) 'connection/connection_web.dart';
 
 part 'app_database.g.dart';
 
-@DriftDatabase(tables: [ProductsCache, PromotionsCache, PendingSales, SyncMeta])
+@DriftDatabase(tables: [ProductsCache, PromotionsCache, PendingSales, SyncMeta, LocalSalesCache])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.createTable(localSalesCache);
+          }
+          if (from < 3) {
+            // Barcode + image reference cached so the offline POS shows the
+            // same product photo/scan code as the online catalog.
+            await m.addColumn(productsCache, productsCache.barcode);
+            await m.addColumn(productsCache, productsCache.imageUrl);
+          }
+        },
+      );
 
   // --- Products ---
 
@@ -88,6 +104,45 @@ class AppDatabase extends _$AppDatabase {
   Future<void> markSyncError(String clientTxnId, String error) =>
       (update(pendingSales)..where((t) => t.clientTxnId.equals(clientTxnId)))
           .write(PendingSalesCompanion(syncError: Value(error)));
+
+  // --- Local Sales Cache (offline Daily Sale view) ---
+
+  /// Upsert a sale into the local mirror. [pending] is true for sales that
+  /// were recorded offline and haven't been confirmed by the server yet.
+  Future<void> upsertLocalSale(Sale sale, {bool pending = false}) {
+    return into(localSalesCache).insertOnConflictUpdate(
+      LocalSalesCacheCompanion.insert(
+        clientTxnId: sale.clientTxnId,
+        saleJson: jsonEncode(sale.toJson()),
+        createdAt: sale.createdAt,
+        pending: Value(pending),
+      ),
+    );
+  }
+
+  /// Called by SyncService after the server confirms a queued offline sale.
+  Future<void> confirmLocalSale(String clientTxnId, Sale confirmedSale) {
+    return (update(localSalesCache)..where((t) => t.clientTxnId.equals(clientTxnId)))
+        .write(LocalSalesCacheCompanion(
+          saleJson: Value(jsonEncode(confirmedSale.toJson())),
+          pending: const Value(false),
+        ));
+  }
+
+  /// Clears the pending flag when the server confirms a queued sale without
+  /// echoing it back (the /sync/push response only carries the saleId).
+  Future<void> markLocalSaleConfirmed(String clientTxnId) {
+    return (update(localSalesCache)..where((t) => t.clientTxnId.equals(clientTxnId)))
+        .write(const LocalSalesCacheCompanion(pending: Value(false)));
+  }
+
+  /// All local sales whose [createdAt] falls within [from..to].
+  Future<List<Sale>> localSalesInRange(DateTime from, DateTime to) async {
+    final rows = await (select(localSalesCache)
+          ..where((t) => t.createdAt.isBiggerOrEqualValue(from) & t.createdAt.isSmallerOrEqualValue(to)))
+        .get();
+    return rows.map((r) => Sale.fromJson(jsonDecode(r.saleJson) as Map<String, dynamic>)).toList();
+  }
 
   // --- Sync bookkeeping ---
 

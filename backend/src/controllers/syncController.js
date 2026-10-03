@@ -2,6 +2,7 @@ const Product = require('../models/Product');
 const Promotion = require('../models/Promotion');
 const asyncHandler = require('../utils/asyncHandler');
 const { createSale } = require('../services/saleService');
+const { domainEvents, EVENTS } = require('../services/events');
 
 // Push queued offline sales. Each is idempotent by clientTxnId, so retrying
 // a partially-failed push is safe — already-synced items just come back
@@ -16,11 +17,25 @@ const pushSales = asyncHandler(async (req, res) => {
         ...saleInput,
         recordedOffline: true,
         cashierId: req.user._id,
+        cashierRole: req.user.role,
       });
       results.push({ clientTxnId: saleInput.clientTxnId, status: 'ok', alreadyExisted, saleId: sale._id });
     } catch (err) {
       results.push({ clientTxnId: saleInput.clientTxnId, status: 'error', error: err.message });
     }
+  }
+
+  // Spec §5: a queued sale the server rejects is a sync failure the
+  // owner/admin must know about — the terminal can't fix it on its own.
+  const failed = results.filter((r) => r.status === 'error');
+  if (failed.length) {
+    domainEvents.emitSafe(EVENTS.SYNC_FAILED, {
+      cashierId: req.user._id,
+      cashierName: req.user.name,
+      failedCount: failed.length,
+      firstError: failed[0].error,
+      clientTxnIds: failed.map((f) => f.clientTxnId),
+    });
   }
 
   res.json({ results });

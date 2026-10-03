@@ -32,8 +32,9 @@ describe('Inventory + POS sale', () => {
   });
 
   test('recording a sale decrements stock via InventoryLog, not a direct overwrite', async () => {
+    const { token: adminToken } = await loginAs(ROLES.ADMIN);
+    const product = await createProduct(adminToken);
     const { token } = await loginAs(ROLES.STAFF);
-    const product = await createProduct(token);
 
     const saleRes = await request(app)
       .post('/api/sales')
@@ -52,8 +53,9 @@ describe('Inventory + POS sale', () => {
   });
 
   test('re-pushing the same clientTxnId does not double-decrement stock (offline sync idempotency)', async () => {
+    const { token: adminToken } = await loginAs(ROLES.ADMIN);
+    const product = await createProduct(adminToken, { currentStock: 5 });
     const { token } = await loginAs(ROLES.STAFF);
-    const product = await createProduct(token, { currentStock: 5 });
 
     const payload = {
       clientTxnId: 'txn-offline-42',
@@ -74,8 +76,9 @@ describe('Inventory + POS sale', () => {
   });
 
   test('sync push endpoint processes a batch of offline sales idempotently', async () => {
+    const { token: adminToken } = await loginAs(ROLES.ADMIN);
+    const product = await createProduct(adminToken, { currentStock: 20 });
     const { token } = await loginAs(ROLES.STAFF);
-    const product = await createProduct(token, { currentStock: 20 });
 
     const sales = [
       { clientTxnId: 'sync-offline-1', items: [{ product: product._id, quantity: 1 }], paymentMethod: 'cash' },
@@ -100,8 +103,9 @@ describe('Inventory + POS sale', () => {
   });
 
   test('insufficient stock is rejected', async () => {
+    const { token: adminToken } = await loginAs(ROLES.ADMIN);
+    const product = await createProduct(adminToken, { currentStock: 1 });
     const { token } = await loginAs(ROLES.STAFF);
-    const product = await createProduct(token, { currentStock: 1 });
 
     const res = await request(app)
       .post('/api/sales')

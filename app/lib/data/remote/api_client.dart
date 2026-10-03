@@ -55,7 +55,9 @@ class ApiClient {
       await tokenStorage.updateAccessToken(response.data['accessToken'] as String);
       return true;
     } catch (_) {
-      await tokenStorage.clear();
+      // Hard-wipe tokens and credential cache when the refresh token itself
+      // is rejected — the user must log in online again.
+      await tokenStorage.clearAll();
       return false;
     }
   }

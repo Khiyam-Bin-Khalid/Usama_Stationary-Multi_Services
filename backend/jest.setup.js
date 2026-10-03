@@ -1,5 +1,6 @@
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
+const { ensureDefaultCategories } = require('./src/services/categoryService');
 
 process.env.JWT_ACCESS_SECRET = 'test_access_secret';
 process.env.JWT_REFRESH_SECRET = 'test_refresh_secret';
@@ -19,6 +20,10 @@ beforeAll(async () => {
   process.env.MONGODB_URI = mongod.getUri();
   await mongoose.connect(process.env.MONGODB_URI);
 });
+
+// Products are validated against the categories collection, which the
+// afterEach wipe empties — re-seed the five SRS categories for each test.
+beforeEach(() => ensureDefaultCategories());
 
 afterEach(async () => {
   const collections = await mongoose.connection.db.collections();

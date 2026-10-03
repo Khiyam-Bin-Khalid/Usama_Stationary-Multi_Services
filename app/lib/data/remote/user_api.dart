@@ -15,4 +15,11 @@ class UserApi {
         final res = await client.dio.patch('/users/$id', data: payload);
         return AppUser.fromJson(res.data['user']);
       });
+
+  Future<AppUser> changeRole(String id, String role) => guarded(() async {
+        final res = await client.dio.patch('/users/$id/role', data: {'role': role});
+        return AppUser.fromJson(res.data['user']);
+      });
+
+  Future<void> delete(String id) => guarded(() => client.dio.delete('/users/$id'));
 }

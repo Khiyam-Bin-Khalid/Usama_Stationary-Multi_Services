@@ -1,5 +1,5 @@
 const Joi = require('joi');
-const { PAYMENT_METHODS, ORDER_STATUSES } = require('../utils/constants');
+const { PAYMENT_METHODS, ORDER_STATUSES, ADMIN_SETTABLE_ORDER_STATUSES } = require('../utils/constants');
 
 const orderItemInputSchema = Joi.object({
   product: Joi.string().hex().length(24).required(),
@@ -21,16 +21,27 @@ const createOrderSchema = Joi.object({
   }).required(),
 });
 
+// Cart quote: same item shape as an order, no delivery/payment yet.
+const quoteOrderSchema = Joi.object({
+  items: Joi.array().items(orderItemInputSchema).min(1).required(),
+  isHomeDelivery: Joi.boolean().default(true),
+});
+
 const updateOrderStatusSchema = Joi.object({
-  status: Joi.string().valid(...Object.values(ORDER_STATUSES)).required(),
+  status: Joi.string().valid(...ADMIN_SETTABLE_ORDER_STATUSES).required(),
   note: Joi.string().max(300).allow('', null),
+  courierName: Joi.string().max(100).allow('', null),
+  trackingNote: Joi.string().max(300).allow('', null),
 });
 
 const listOrdersQuerySchema = Joi.object({
   status: Joi.string().valid(...Object.values(ORDER_STATUSES)),
+  // Comma-separated group filter, e.g. "processing,packing" for the
+  // fulfilment queue.
+  statuses: Joi.string().max(300),
   paymentStatus: Joi.string(),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(200).default(50),
 });
 
-module.exports = { createOrderSchema, updateOrderStatusSchema, listOrdersQuerySchema };
+module.exports = { createOrderSchema, quoteOrderSchema, updateOrderStatusSchema, listOrdersQuerySchema };

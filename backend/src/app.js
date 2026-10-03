@@ -16,6 +16,17 @@ const reportRoutes = require('./routes/reportRoutes');
 const promotionRoutes = require('./routes/promotionRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const shiftRoutes = require('./routes/shiftRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const auditRoutes = require('./routes/auditRoutes');
+const discrepancyRoutes = require('./routes/discrepancyRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const notificationService = require('./services/notificationService');
+
+// Spec §5: the Notification Service subscribes to domain events once, here,
+// so every entry point (server, tests, seed) gets the same wiring.
+notificationService.start();
 
 const app = express();
 
@@ -48,7 +59,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(
   '/api',
-  rateLimit({ windowMs: 15 * 60 * 1000, max: 1000, standardHeaders: true, legacyHeaders: false })
+  rateLimit({ windowMs: 15 * 60 * 1000, max: 1000, standardHeaders: true, legacyHeaders: false, skip: () => env.nodeEnv === 'test' })
 );
 
 app.use('/uploads', express.static(path.join(__dirname, '..', env.uploadDir)));
@@ -64,6 +75,12 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/promotions', promotionRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/shifts', shiftRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/audit-logs', auditRoutes);
+app.use('/api/inventory/discrepancies', discrepancyRoutes);
+app.use('/api/inventory', inventoryRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -6,6 +6,8 @@ class ProductsCache extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
   TextColumn get sku => text()();
+  TextColumn get barcode => text().nullable()();
+  TextColumn get imageUrl => text().nullable()();
   TextColumn get category => text()();
   TextColumn get unit => text()();
   RealColumn get price => real()();
@@ -55,4 +57,22 @@ class SyncMeta extends Table {
 
   @override
   Set<Column> get primaryKey => {key};
+}
+
+/// Local mirror of confirmed (and pending-sync) sales used by the Daily Sale
+/// tab when the device is offline. The full Sale is stored as a JSON blob;
+/// [createdAt] is denormalized so we can query today's rows without
+/// deserializing every blob.
+class LocalSalesCache extends Table {
+  /// Stable key — clientTxnId for offline sales, set to the server _id once
+  /// confirmed so a server-side re-pull deduplicates correctly.
+  TextColumn get clientTxnId => text()();
+  TextColumn get saleJson => text()();
+  DateTimeColumn get createdAt => dateTime()();
+
+  /// True while the sale hasn't been confirmed by the server yet.
+  BoolColumn get pending => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {clientTxnId};
 }

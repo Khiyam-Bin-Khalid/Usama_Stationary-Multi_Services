@@ -20,6 +20,7 @@ const paymentSchema = new mongoose.Schema(
     // Manual receipt upload
     receiptImageUrl: { type: String },
     receiptNote: { type: String },
+    receiptUploadedAt: { type: Date },
 
     // Admin review (manual_receipt method)
     reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

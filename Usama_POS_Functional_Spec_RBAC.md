@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Login & Role Selection Flow
+## 1. Login & Role Selection Flow  
 
 The **Desktop POS login screen** presents a role selector before credential entry:
 

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/providers.dart';
 import 'core/router/app_router.dart';
-import 'core/theme/app_background.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
@@ -24,10 +23,8 @@ class UsamaBookDepotApp extends ConsumerWidget {
       title: 'Usama Book Depot',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.light, // spec palette is a white-background system
       routerConfig: router,
-      // Brand gradient behind every route; scaffolds are transparent (AppTheme).
-      builder: (context, child) => AppBackground(child: child ?? const SizedBox.shrink()),
     );
   }
 }

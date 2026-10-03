@@ -61,21 +61,102 @@ app also add its public origin to `CLIENT_ORIGIN` in `backend/.env`.
 Only desktop and mobile builds keep the offline SQLite cache; the web build talks to the API
 directly and needs a connection (per the SRS).
 
-## Roles and who manages them
+## Roles and who manages them (spec §2)
 
 Roles live in the backend (`backend/src/utils/constants.js`) and are mirrored in
-`app/lib/core/roles.dart`. Accounts are managed from the **Staff** screen of the POS/Admin shell
-(`/admin/staff`), which only `admin` and `superadmin` can open.
+`app/lib/core/roles.dart` (`Permissions`). The server enforces every rule with one central
+`requireRole` middleware per route; the app only decides what to *show*.
 
-| Role         | How the account is created                                       | Can manage                                     |
-|--------------|------------------------------------------------------------------|------------------------------------------------|
-| `superadmin` | Once, by `npm run seed` from `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` in `backend/.env`. Only that one email may act as superadmin. | Everything: create/disable `admin` and `staff`, change roles, all admin screens |
-| `admin`      | Created by the superadmin in **Staff → New account** (Role = Admin) | Create/disable `staff` only; orders, payments, promotions, inventory, reports, POS |
-| `staff`      | Created by an admin or superadmin in **Staff → New account**      | POS sales, stock view, reports only            |
-| `customer`   | Self-registers from the login screen ("New customer? Create an account") — usually on the web app | Their own cart and orders |
+| Capability | Super Admin | Admin | Staff | Customer |
+|---|:---:|:---:|:---:|:---:|
+| Register / delete Admin & Staff accounts, change roles | ✅ | ❌ | ❌ | — |
+| Add / edit / delete products, adjust stock | ✅ | ✅ | ❌ | — |
+| Record counter sales (POS), open/close shift | ✅ | ✅ | ✅ | — |
+| View inventory (read-only) + report discrepancies | ✅ | ✅ | ✅ | — |
+| Daily sales report | ✅ | ✅ | own sales only | — |
+| Weekly / monthly / yearly + category reports | ✅ | ✅ | ❌ | — |
+| Orders, payment review, promotions | ✅ | ✅ | ❌ | own orders |
+| Low-stock / out-of-stock / new-customer / sync alerts | ✅ | ✅ | ❌ (new-order alerts only) | — |
+| Audit log | ✅ | ❌ | ❌ | — |
+| Register / browse / order online | — | — | — | ✅ |
 
-Nobody can register as staff/admin from the public form: the register endpoint hard-codes the
-`customer` role, and the create-account endpoint requires an `admin`/`superadmin` token.
+- **superadmin** is created once by `npm run seed` from `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` in
+  `backend/.env`. Only that email may act as superadmin, and the account cannot be edited or deleted
+  through the API.
+- **admin** / **staff** are created only by the superadmin in **Accounts & roles → New account**
+  (`POST /api/auth/register-admin` / `register-staff`). Role changes and deletes are audit-logged;
+  deletes are soft (the account can no longer sign in, history is kept).
+- **customer** self-registers from the login screen ("New customer? Create an account"), which
+  notifies Admin/Super Admin. The public form hard-codes the customer role.
+
+### Login flow (spec §1)
+
+The desktop/mobile POS login shows a **role selector** (Super Admin / Admin / Staff) before the
+credentials. The selected role is sent to `POST /api/auth/login`; the server compares it with the
+account's real role and rejects a mismatch with 403 (and writes an `auth.login_failed` audit entry).
+Each role then lands on its **own dashboard** (`/dashboard`) with its own navigation. The web build
+opens in the customer sign-in flow, with a "Staff / admin sign-in" link for admins using a browser.
+
+### Inventory, notifications, shifts (spec §4–§6)
+
+- Categories are data (`GET/POST/PATCH /api/categories`), each with a unit type and default
+  low-stock threshold (5). Stock is always changed within the product's own category.
+- Reaching **0** marks a product out of stock: hidden from the POS quick-sell grid and storefront,
+  never deleted. Crossing **≤ threshold** raises a low-stock alert. Both are audit-logged.
+- The **Notification Service** (`backend/src/services/notificationService.js`) subscribes to domain
+  events (`services/events.js`) — low stock, out of stock, customer registered, order placed,
+  payment failed, POS sync failure, staff discrepancy report — and stores role-addressed in-app
+  notifications (`GET /api/notifications`). Email delivery is logged until an SMTP provider is
+  configured in `services/mailer.js`.
+- Staff **report discrepancies** from the Stock screen (`POST /api/inventory/discrepancies`); an
+  admin resolves them, optionally applying the shelf count as an adjustment.
+- **Shifts**: staff open a shift with a cash float and close it with the counted cash; the server
+  computes expected cash from the shift's cash sales and records the variance (Z-report).
+  Sales record the open shift; staff reports and sale lists are scoped to their own transactions.
+
+### Products, orders and payment review (consolidated spec)
+
+- **Three separate identifiers.** Product ID = the database `_id`; **SKU** = system-generated
+  business code (`STN-00001`, `GRO-00001`, … per category — the admin never types one, though an
+  explicit value is still accepted for imports); **Barcode** = optional physical scan code, unique
+  when present. Inventory rows show image · name · SKU · barcode · price · stock · reorder level ·
+  status, and the search box accepts a scanned barcode.
+- **Image continuity.** Every order item (and POS sale item) stores a snapshot — name, SKU,
+  barcode, image reference, unit price — so the image the customer selected is shown identically
+  in the cart, checkout summary, confirmation, payment review, admin order detail, processing /
+  packing / dispatch / delivery queues, tracking and order history, regardless of later catalog
+  edits or soft-deletes. One widget (`app/lib/widgets/product_image.dart`) renders it everywhere.
+- **Checkout summary** comes from `POST /api/orders/quote`: images, names, SKUs, quantities, unit
+  prices, item totals, subtotal, discount, delivery charge (`DELIVERY_FEE`), tax (`ORDER_TAX_RATE`)
+  and grand total, then delivery details and payment method.
+- **Receipt verification is mandatory.** Uploading a receipt moves the order to *Payment
+  submitted → Payment under review* and notifies admins; only an explicit admin **Approve** moves
+  it to *Payment approved → Order confirmed*. **Reject** moves it to *Payment rejected*, notifies
+  the customer with the reason, and lets them upload a corrected receipt. Fulfilment statuses are
+  refused by the server until payment is approved (or the order is cash on delivery).
+- **Order lifecycle & queues.** Pending → Payment submitted → Under review → Approved → Confirmed
+  → Processing → Packing → Dispatched → Out for delivery → Delivered → Completed (plus Payment
+  rejected / Cancelled). The admin Orders screen has a queue per stage; *Processing & delivery*
+  opens on the fulfilment queues; cancelling returns reserved stock.
+- **Stock movements.** Every change (sale, order reservation, adjustment, return, initial stock)
+  is logged with product, SKU, previous stock, delta, resulting stock, type, related order/sale,
+  user and time (`GET /api/inventory/movements`, admin *Stock movement* screen). POS sales and
+  online orders share the same stock, so both sides always see the same counts.
+- **Reports** support daily / weekly / monthly / yearly presets or any custom date range, filtered
+  by source, category and product, drawn as line graphs, plus category and top-product breakdowns.
+- **Storefront** navigation: Home, Products, Categories, Deals, Cart, Orders, Profile — top links on
+  tablet/desktop, bottom navigation on phones. Content sits in a 1200 px max-width container with
+  16 / 24 / 32 px side gutters (phone / tablet / desktop) defined once in
+  `app/lib/core/responsive.dart`.
+
+### Theme
+
+`app/lib/core/theme/app_colors.dart` holds the exact brand tokens (primaryOrange `#FF6A00`,
+primaryDark `#E65E00`, accentRed `#FF4D4D`, success `#16A34A`, background `#FFFFFF`, surface
+`#F7F7F7`, textPrimary `#1A1A1A`, textSecondary `#6B6B6B`, border `#E5E5E5`) and the usage map;
+`app_theme.dart` applies them (orange primary buttons / selected tabs / selected role, primaryDark
+on hover/press and focused inputs, accentRed for low-stock, deals, delete and errors, success for
+paid/synced/confirmation toasts, surface for cards/sidebar/inputs, border for outlines/dividers).
 
 ## What's postponed (by design, confirmed with the client)
 

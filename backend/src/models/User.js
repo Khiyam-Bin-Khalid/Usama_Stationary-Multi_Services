@@ -23,6 +23,10 @@ const userSchema = new mongoose.Schema(
     phone: { type: String, trim: true },
     branch: { type: String, trim: true },
     isActive: { type: Boolean, default: true },
+    // Spec §2: Super Admin can delete accounts. Deleted accounts are kept
+    // (for audit/sales history) but flagged, excluded from lists and unable
+    // to log in.
+    deletedAt: { type: Date, default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     // Customer-only fields
     addresses: [

@@ -5,6 +5,8 @@ const saleItemSchema = new mongoose.Schema(
   {
     product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
     name: { type: String, required: true }, // snapshot at time of sale
+    sku: { type: String },
+    imageUrl: { type: String },
     category: { type: String, required: true },
     unitPrice: { type: Number, required: true },
     quantity: { type: Number, required: true, min: 0.01 },
@@ -26,7 +28,9 @@ const saleSchema = new mongoose.Schema(
     taxAmount: { type: Number, required: true, default: 0 },
     total: { type: Number, required: true },
     paymentMethod: { type: String, enum: ['cash', 'card'], default: 'cash' },
-    cashier: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    cashier: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    // Open shift of the cashier at the time of sale (spec §7 transactions.shift_id).
+    shift: { type: mongoose.Schema.Types.ObjectId, ref: 'Shift', index: true },
     branch: { type: String, trim: true },
     // Set true when the record was created offline on the client and pushed later.
     recordedOffline: { type: Boolean, default: false },

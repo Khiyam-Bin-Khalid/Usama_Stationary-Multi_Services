@@ -21,6 +21,7 @@ router.post(
 );
 
 router.get('/pending-review', requireRole(ROLES.SUPERADMIN, ROLES.ADMIN), paymentController.listPendingReview);
+router.get('/orders/:orderId', requireRole(ROLES.SUPERADMIN, ROLES.ADMIN, ROLES.STAFF), paymentController.getOrderPayment);
 router.post(
   '/:id/review',
   requireRole(ROLES.SUPERADMIN, ROLES.ADMIN),

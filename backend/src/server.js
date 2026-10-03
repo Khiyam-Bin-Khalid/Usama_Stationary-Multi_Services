@@ -2,10 +2,12 @@ const app = require('./app');
 const env = require('./config/env');
 const { connectDb } = require('./config/db');
 const { startLowStockJob } = require('./jobs/lowStockAlertJob');
+const { ensureDefaultCategories } = require('./services/categoryService');
 
 async function start() {
   await connectDb();
   console.log('Connected to MongoDB'); // eslint-disable-line no-console
+  await ensureDefaultCategories();
 
   startLowStockJob();
 

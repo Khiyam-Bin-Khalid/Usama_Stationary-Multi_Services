@@ -4,7 +4,6 @@ import '../../core/format.dart';
 import '../../core/providers.dart';
 import '../../core/roles.dart';
 import '../../data/models/promotion.dart';
-import '../../data/remote/api_client.dart';
 
 final _promotionsProvider = FutureProvider.autoDispose<List<Promotion>>((ref) => ref.watch(promotionApiProvider).allForAdmin());
 
@@ -117,7 +116,7 @@ class PromotionsAdminScreen extends ConsumerWidget {
                   if (dialogContext.mounted) Navigator.pop(dialogContext);
                   ref.invalidate(_promotionsProvider);
                 } catch (e) {
-                  final message = e is ApiException ? e.message : e.toString();
+                  final message = e.toString();
                   if (dialogContext.mounted) ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text(message)));
                 }
               },

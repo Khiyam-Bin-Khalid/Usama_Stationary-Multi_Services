@@ -31,25 +31,10 @@
 
   <title>Usama Book Depot</title>
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#e2d1c3">
+  <meta name="theme-color" content="#FF6A00">
   <style>
-    /* Brand background — same gradient the Flutter theme paints, so there is
-       no white flash while the engine loads and the browser chrome matches. */
-    html, body {
-      margin: 0;
-      min-height: 100%;
-      background-color: #e2d1c3;
-      background-image: linear-gradient(135deg, #fdfcfb 0%, #e2d1c3 100%);
-      background-attachment: fixed;
-      color: #2b1d14;
-    }
-    @media (prefers-color-scheme: dark) {
-      html, body {
-        background-color: #33271e;
-        background-image: linear-gradient(135deg, #1e1712 0%, #33271e 100%);
-        color: #f3ebe3;
-      }
-    }
+    /* Matches AppColors: white base, so there is no flash while the engine loads. */
+    html, body { margin: 0; min-height: 100%; background: #FFFFFF; color: #1A1A1A; }
   </style>
 </head>
 <body>

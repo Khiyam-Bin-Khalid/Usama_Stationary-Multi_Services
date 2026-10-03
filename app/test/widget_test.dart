@@ -31,6 +31,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Usama Book Depot'), findsOneWidget);
+    // Desktop/mobile builds open in staff mode with the role selector (spec §1).
+    expect(find.text('Super Admin'), findsOneWidget);
+    expect(find.text('Admin'), findsOneWidget);
+    expect(find.text('Staff'), findsOneWidget);
+    expect(find.text('Log in as Staff'), findsOneWidget);
+
+    // Picking a role updates the login button label.
+    await tester.tap(find.text('Admin'));
+    await tester.pumpAndSettle();
+    expect(find.text('Log in as Admin'), findsOneWidget);
+
+    // Switching to the customer store flow shows the plain login + register link.
+    await tester.tap(find.text('Customer? Sign in to the online store'));
+    await tester.pumpAndSettle();
     expect(find.text('Log in'), findsOneWidget);
+    expect(find.text('New customer? Create an account'), findsOneWidget);
   });
 }

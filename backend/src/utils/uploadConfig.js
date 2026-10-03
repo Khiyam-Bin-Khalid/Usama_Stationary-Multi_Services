@@ -13,6 +13,7 @@ const storage = multer.diskStorage({
 });
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const ALLOWED_IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
 const receiptUpload = multer({
   storage,
@@ -25,4 +26,17 @@ const receiptUpload = multer({
   },
 });
 
-module.exports = { receiptUpload };
+// Buffered in memory, not written to disk directly: productImageService
+// decides per-upload whether that buffer goes to Cloudinary or local disk.
+const productImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: env.maxUploadMb * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_IMAGE_MIME.includes(file.mimetype)) {
+      return cb(new Error('Only JPG, PNG, or WEBP images are allowed'));
+    }
+    cb(null, true);
+  },
+});
+
+module.exports = { receiptUpload, productImageUpload };

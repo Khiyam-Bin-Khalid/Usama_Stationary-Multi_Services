@@ -13,8 +13,14 @@ class AuthApi {
   final ApiClient client;
   AuthApi(this.client);
 
-  Future<AuthResult> login(String email, String password) => guarded(() async {
-        final res = await client.dio.post('/auth/login', data: {'email': email, 'password': password});
+  /// [role] is the tile picked on the desktop login screen (spec §1). The
+  /// server rejects the login if the account's real role differs.
+  Future<AuthResult> login(String email, String password, {String? role}) => guarded(() async {
+        final res = await client.dio.post('/auth/login', data: {
+          'email': email,
+          'password': password,
+          if (role != null) 'role': role,
+        });
         return AuthResult(
           user: AppUser.fromJson(res.data['user']),
           accessToken: res.data['accessToken'],

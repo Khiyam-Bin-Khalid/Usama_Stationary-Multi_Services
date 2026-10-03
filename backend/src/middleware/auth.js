@@ -20,7 +20,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
     throw new AppError(401, 'Invalid or expired token');
   }
 
-  const user = await User.findById(payload.sub);
+  const user = await User.findOne({ _id: payload.sub, deletedAt: null });
   if (!user || !user.isActive) {
     throw new AppError(401, 'Account not found or deactivated');
   }

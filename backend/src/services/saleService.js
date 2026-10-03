@@ -3,6 +3,7 @@ const Product = require('../models/Product');
 const AppError = require('../utils/AppError');
 const { applyStockChange } = require('./inventoryService');
 const { generateInvoiceNumber } = require('../utils/invoiceNumber');
+const { currentOpenShift } = require('./shiftService');
 const { INVENTORY_LOG_TYPES, JOB_STATUSES } = require('../utils/constants');
 
 /**
@@ -17,7 +18,7 @@ const { INVENTORY_LOG_TYPES, JOB_STATUSES } = require('../utils/constants');
  * counter/branch deployment; revisit with transactions if scaling to a
  * multi-terminal, high-concurrency setup.
  */
-async function createSale({ clientTxnId, items, paymentMethod, taxRate, branch, recordedOffline, cashierId }) {
+async function createSale({ clientTxnId, items, paymentMethod, taxRate, branch, recordedOffline, cashierId, cashierRole }) {
   const existing = await Sale.findOne({ clientTxnId });
   if (existing) return { sale: existing, alreadyExisted: true };
 
@@ -34,6 +35,8 @@ async function createSale({ clientTxnId, items, paymentMethod, taxRate, branch, 
     return {
       product: product._id,
       name: product.name,
+      sku: product.sku,
+      imageUrl: product.imageUrl,
       category: product.category,
       unitPrice: product.price,
       quantity,
@@ -51,18 +54,23 @@ async function createSale({ clientTxnId, items, paymentMethod, taxRate, branch, 
     if (!product.isMadeToOrder) {
       await applyStockChange({
         productId: item.product,
+        category: item.category, // spec §4.1: decrement within the product's own category
         delta: -item.quantity,
         type: INVENTORY_LOG_TYPES.SALE,
         reference: clientTxnId,
         reason: 'POS sale',
         actor: cashierId,
+        actorRole: cashierRole,
         branch,
       });
     }
   }
 
+  const shift = await currentOpenShift(cashierId);
+
   const sale = await Sale.create({
     clientTxnId,
+    shift: shift ? shift._id : undefined,
     invoiceNumber: generateInvoiceNumber('INV'),
     items: saleItems,
     subtotal,

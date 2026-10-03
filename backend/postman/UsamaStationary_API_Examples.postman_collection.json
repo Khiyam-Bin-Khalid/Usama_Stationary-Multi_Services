@@ -1,0 +1,1675 @@
+{
+  "info": {
+    "name": "Usama Stationary — Complete API Examples",
+    "description": "Manual request examples for every API endpoint mounted by the backend. Set baseUrl and serverUrl, add local Superadmin credentials, and log in to populate tokens. Replace REPLACE_WITH_* variables with IDs from your API responses. JSON bodies are examples only: create/update/delete, sales, orders, shifts, and payment review requests change database state. Do not run the full collection against production. Re-select a local image/receipt file in form-data requests. The Stripe webhook requires a valid Stripe signature and cannot be invoked with the unsigned dummy body.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000/api"
+    },
+    {
+      "key": "serverUrl",
+      "value": "http://localhost:4000"
+    },
+    {
+      "key": "superadminEmail",
+      "value": "your-superadmin@example.com"
+    },
+    {
+      "key": "superadminPassword",
+      "value": "REPLACE_WITH_LOCAL_SUPERADMIN_PASSWORD"
+    },
+    {
+      "key": "superadminToken",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "staffToken",
+      "value": ""
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": "REPLACE_WITH_USER_ID"
+    },
+    {
+      "key": "productId",
+      "value": "REPLACE_WITH_PRODUCT_ID"
+    },
+    {
+      "key": "saleId",
+      "value": "REPLACE_WITH_SALE_ID"
+    },
+    {
+      "key": "promotionId",
+      "value": "REPLACE_WITH_PROMOTION_ID"
+    },
+    {
+      "key": "orderId",
+      "value": "REPLACE_WITH_ORDER_ID"
+    },
+    {
+      "key": "paymentId",
+      "value": "REPLACE_WITH_PAYMENT_ID"
+    },
+    {
+      "key": "shiftId",
+      "value": "REPLACE_WITH_SHIFT_ID"
+    },
+    {
+      "key": "notificationId",
+      "value": "REPLACE_WITH_NOTIFICATION_ID"
+    },
+    {
+      "key": "discrepancyId",
+      "value": "REPLACE_WITH_DISCREPANCY_ID"
+    },
+    {
+      "key": "stripeSignature",
+      "value": "REPLACE_WITH_STRIPE_SIGNATURE"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin.example@example.com"
+    },
+    {
+      "key": "adminPassword",
+      "value": "ChangeMe123!"
+    },
+    {
+      "key": "staffEmail",
+      "value": "staff.example@example.com"
+    },
+    {
+      "key": "staffPassword",
+      "value": "ChangeMe123!"
+    },
+    {
+      "key": "customerEmail",
+      "value": "customer.example@example.com"
+    },
+    {
+      "key": "customerPassword",
+      "value": "ChangeMe123!"
+    },
+    {
+      "key": "categoryKey",
+      "value": "sample_supplies"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Check API health",
+          "description": "Public health check; no request body.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{serverUrl}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register customer",
+          "description": "Public customer registration. Use a unique email for each registration.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sample Customer\",\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\",\n  \"phone\": \"03001234567\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/register-customer"
+          }
+        },
+        {
+          "name": "Log in",
+          "description": "Public login. Use the credentials for an existing local account; role is optional and is only checked against the account role.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{superadminEmail}}\",\n  \"password\": \"{{superadminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response.accessToken) pm.collectionVariables.set('superadminToken', response.accessToken);",
+                  "if (response.refreshToken) pm.collectionVariables.set('refreshToken', response.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh tokens",
+          "description": "Exchange the refresh token returned by login.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/refresh"
+          }
+        },
+        {
+          "name": "Get my profile",
+          "description": "Returns the authenticated account profile.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/me"
+          }
+        },
+        {
+          "name": "Create staff account (legacy route)",
+          "description": "Superadmin only. Choose role staff or admin; use a unique email.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sample Staff\",\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\",\n  \"role\": \"staff\",\n  \"phone\": \"03001234567\",\n  \"branch\": \"Main\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/staff"
+          }
+        },
+        {
+          "name": "Register staff",
+          "description": "Superadmin only. Creates a staff account; use a unique email.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sample Staff\",\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\",\n  \"role\": \"staff\",\n  \"phone\": \"03001234567\",\n  \"branch\": \"Main\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/register-staff"
+          }
+        },
+        {
+          "name": "Register admin",
+          "description": "Superadmin only. Creates an admin account; use a unique email.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sample Admin\",\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"role\": \"admin\",\n  \"phone\": \"03007654321\",\n  \"branch\": \"Main\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/register-admin"
+          }
+        },
+        {
+          "name": "Log in as admin",
+          "description": "Log in as admin; saves returned access and refresh tokens for subsequent requests. Register a sample admin account first where appropriate, then set matching credential variables.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response.accessToken) pm.collectionVariables.set('adminToken', response.accessToken);",
+                  "if (response.refreshToken) pm.collectionVariables.set('refreshToken', response.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"role\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Log in as staff",
+          "description": "Log in as staff; saves returned access and refresh tokens for subsequent requests. Register a sample staff account first where appropriate, then set matching credential variables.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response.accessToken) pm.collectionVariables.set('staffToken', response.accessToken);",
+                  "if (response.refreshToken) pm.collectionVariables.set('refreshToken', response.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\",\n  \"role\": \"staff\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Log in as customer",
+          "description": "Log in as customer; saves returned access and refresh tokens for subsequent requests. Register a sample customer account first where appropriate, then set matching credential variables.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const response = pm.response.json();",
+                  "if (response.accessToken) pm.collectionVariables.set('customerToken', response.accessToken);",
+                  "if (response.refreshToken) pm.collectionVariables.set('refreshToken', response.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\",\n  \"role\": \"customer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List users",
+          "description": "Superadmin only. Query parameters are optional.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/users?role=staff&isActive=true&q=Sample"
+          }
+        },
+        {
+          "name": "Get user",
+          "description": "Superadmin only. Set userId to an existing user ID.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Update user",
+          "description": "Superadmin only. Send one or more supported profile/status fields.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Sample Staff\",\n  \"phone\": \"03001234567\",\n  \"branch\": \"Main\",\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Change user role",
+          "description": "Superadmin only. Allowed roles are admin and staff; the API does not promote users to superadmin.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"staff\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/users/{{userId}}/role"
+          }
+        },
+        {
+          "name": "Deactivate user",
+          "description": "Superadmin only. Soft-deactivates the user; no request body.",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/users/{{userId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products and inventory",
+      "item": [
+        {
+          "name": "Browse products",
+          "description": "Public catalog search example; optional filters include q, isAvailableOnline, isActive, and lowStockOnly.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/products?category=stationery&sellableOnly=true&page=1&limit=20"
+          }
+        },
+        {
+          "name": "Get product",
+          "description": "Public product detail. Set productId to an existing product ID.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/products/{{productId}}"
+          }
+        },
+        {
+          "name": "Create product",
+          "description": "Admin or superadmin. Category must already exist; this example uses the seeded stationery category.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sample A5 Notebook\",\n  \"sku\": \"API-EXAMPLE-NB-001\",\n  \"category\": \"stationery\",\n  \"unit\": \"piece\",\n  \"price\": 250,\n  \"costPrice\": 150,\n  \"currentStock\": 20,\n  \"reorderThreshold\": 5,\n  \"isMadeToOrder\": false,\n  \"isAvailableOnline\": true,\n  \"description\": \"Dummy API example product\",\n  \"branch\": \"Main\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/products"
+          }
+        },
+        {
+          "name": "Update product",
+          "description": "Admin or superadmin. Send only fields to change; stock changes use the adjust-stock endpoint.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 275,\n  \"isAvailableOnline\": true,\n  \"description\": \"Updated dummy API example product\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/products/{{productId}}"
+          }
+        },
+        {
+          "name": "Deactivate product",
+          "description": "Admin or superadmin. Soft-deactivates the product; no request body.",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/products/{{productId}}"
+          }
+        },
+        {
+          "name": "Adjust product stock",
+          "description": "Admin or superadmin. delta must be non-zero; use a negative value to reduce stock.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"delta\": 5,\n  \"reason\": \"Sample stock replenishment\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/products/{{productId}}/adjust-stock"
+          }
+        },
+        {
+          "name": "Upload product image",
+          "description": "Admin or superadmin. In Body choose form-data; attach an image file under the image key. Postman sets the multipart content type automatically.",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/products/{{productId}}/image"
+          }
+        },
+        {
+          "name": "Get product inventory log",
+          "description": "Staff, admin, or superadmin. Set productId to an existing product ID.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/products/{{productId}}/inventory-log",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "List categories",
+          "description": "Any authenticated account can list active categories.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/categories",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create category",
+          "description": "Admin or superadmin. key must be lowercase letters, digits, and underscores; use a new key.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"sample_supplies\",\n  \"name\": \"Sample Supplies\",\n  \"unitType\": \"piece\",\n  \"defaultReorderThreshold\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/categories"
+          }
+        },
+        {
+          "name": "Update category",
+          "description": "Admin or superadmin. Change the path key to an existing category key.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Sample Supplies\",\n  \"unitType\": \"piece\",\n  \"defaultReorderThreshold\": 8,\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/categories/{{categoryKey}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "POS sales",
+      "item": [
+        {
+          "name": "Record POS sale",
+          "description": "Staff, admin, or superadmin. Replace productId with an in-stock product ID. clientTxnId must be unique per sale.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientTxnId\": \"api-example-sale-001\",\n  \"items\": [\n    {\n      \"product\": \"{{productId}}\",\n      \"quantity\": 2\n    }\n  ],\n  \"paymentMethod\": \"cash\",\n  \"taxRate\": 0,\n  \"branch\": \"Main\",\n  \"recordedOffline\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/sales"
+          }
+        },
+        {
+          "name": "List POS sales",
+          "description": "Staff, admin, or superadmin. Date/category/shift filters are optional.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sales?from=2026-10-01&to=2026-10-31&page=1&limit=20",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get POS sale",
+          "description": "Staff, admin, or superadmin. Set saleId to a sale ID.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sales/{{saleId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Offline sync",
+      "item": [
+        {
+          "name": "Push offline sales",
+          "description": "Staff, admin, or superadmin. clientTxnId makes each sale idempotent; use a fresh ID for a new example.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sales\": [\n    {\n      \"clientTxnId\": \"api-example-offline-001\",\n      \"items\": [\n        {\n          \"product\": \"{{productId}}\",\n          \"quantity\": 1\n        }\n      ],\n      \"paymentMethod\": \"cash\",\n      \"taxRate\": 0,\n      \"branch\": \"Main\",\n      \"recordedOffline\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/sync/push"
+          }
+        },
+        {
+          "name": "Pull catalog changes",
+          "description": "Staff, admin, or superadmin. since is optional ISO 8601 timestamp; omit it to request all available changes.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sync/pull?since=2026-10-01T00:00:00.000Z",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reports and dashboard",
+      "item": [
+        {
+          "name": "Get dashboard",
+          "description": "Staff, admin, or superadmin. Metrics are scoped to the caller role.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/reports/dashboard",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get sales report",
+          "description": "Staff, admin, or superadmin. period: daily, weekly, monthly, yearly; source: pos, online, all.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/reports/sales?period=daily&source=all&from=2026-10-01&to=2026-10-31",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get category report",
+          "description": "Admin or superadmin. source: pos, online, all.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/reports/categories?source=all&from=2026-10-01&to=2026-10-31",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Promotions",
+      "item": [
+        {
+          "name": "List active promotions",
+          "description": "Public active promotion list; no request body.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/promotions/active"
+          }
+        },
+        {
+          "name": "List all promotions",
+          "description": "Admin or superadmin; includes inactive and upcoming promotions.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/promotions",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create promotion",
+          "description": "Admin or superadmin. Dates must be valid and endDate must be after startDate; categories must be supported category keys.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sample Stationery Offer\",\n  \"description\": \"Dummy 10 percent discount\",\n  \"discountType\": \"percent\",\n  \"discountValue\": 10,\n  \"categories\": [\n    \"stationery\"\n  ],\n  \"products\": [],\n  \"startDate\": \"2026-10-04T00:00:00.000Z\",\n  \"endDate\": \"2026-11-04T00:00:00.000Z\",\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/promotions"
+          }
+        },
+        {
+          "name": "Update promotion",
+          "description": "Admin or superadmin. Set promotionId to an existing promotion ID.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"discountValue\": 15,\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/promotions/{{promotionId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Online orders",
+      "item": [
+        {
+          "name": "Place order",
+          "description": "Customer only. Replace productId with a product ID available for online sale.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"product\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"paymentMethod\": \"cash_on_delivery\",\n  \"delivery\": {\n    \"isHomeDelivery\": true,\n    \"address\": {\n      \"line1\": \"1 Sample Street\",\n      \"line2\": \"Apartment 2\",\n      \"city\": \"Lahore\",\n      \"phone\": \"03001234567\"\n    },\n    \"window\": \"10:00-12:00\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/orders"
+          }
+        },
+        {
+          "name": "List my orders",
+          "description": "Customer only; returns the authenticated customer orders.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/orders/mine",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get my order",
+          "description": "Customer only; order must belong to the authenticated customer.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/orders/mine/{{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List orders",
+          "description": "Staff, admin, or superadmin. Optional filters include status and paymentStatus.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/orders?status=pending&page=1&limit=20",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get order",
+          "description": "Staff, admin, or superadmin. Set orderId to an existing order ID.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/orders/{{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update order status",
+          "description": "Admin or superadmin. Allowed statuses include pending, confirmed, processing, out_for_delivery, delivered, and cancelled.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"confirmed\",\n  \"note\": \"Sample order confirmed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/orders/{{orderId}}/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Stripe webhook",
+          "description": "Stripe-only endpoint. Send the exact raw event body signed by Stripe in the Stripe-Signature header. An unsigned dummy event will be rejected.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Stripe-Signature",
+                "value": "{{stripeSignature}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_sample_signed_by_stripe\",\n  \"object\": \"event\",\n  \"type\": \"payment_intent.succeeded\",\n  \"data\": {\n    \"object\": {\n      \"id\": \"pi_sample\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/payments/stripe/webhook"
+          }
+        },
+        {
+          "name": "Upload manual payment receipt",
+          "description": "Customer only. Body > form-data: attach a receipt image/file using the receipt key. Postman sets multipart content type automatically.",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "receipt",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/payments/orders/{{orderId}}/receipt"
+          }
+        },
+        {
+          "name": "List payments pending review",
+          "description": "Admin or superadmin; no request body.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/payments/pending-review",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Review receipt payment",
+          "description": "Admin or superadmin. Set paymentId to a payment awaiting review.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approve\": true,\n  \"note\": \"Sample receipt verified\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/payments/{{paymentId}}/review"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shifts",
+      "item": [
+        {
+          "name": "Open shift",
+          "description": "Staff, admin, or superadmin. Optional opening cash, branch, and note.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"openingCash\": 5000,\n  \"branch\": \"Main\",\n  \"note\": \"Sample morning shift\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/shifts/open"
+          }
+        },
+        {
+          "name": "Close shift",
+          "description": "Staff, admin, or superadmin. closingCashActual is required.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"closingCashActual\": 7500,\n  \"note\": \"Sample shift close\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/shifts/close"
+          }
+        },
+        {
+          "name": "Get current shift",
+          "description": "Staff, admin, or superadmin; returns the caller current shift or null.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shifts/current",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List shifts",
+          "description": "Staff see their own shifts; admins can view all.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shifts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get shift report",
+          "description": "Staff can view their own shift; admins can view all shifts.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shifts/{{shiftId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List notifications",
+          "description": "Staff, admin, or superadmin. unreadOnly is optional.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notifications?unreadOnly=true&page=1&limit=20",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get unread notification count",
+          "description": "Staff, admin, or superadmin.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notifications/unread-count",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark all notifications read",
+          "description": "Staff, admin, or superadmin. This changes notification state.",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/notifications/read-all",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark notification read",
+          "description": "Staff, admin, or superadmin. Set notificationId to a visible notification ID.",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/notifications/{{notificationId}}/read",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inventory discrepancies",
+      "item": [
+        {
+          "name": "Report inventory discrepancy",
+          "description": "Staff, admin, or superadmin. product must be a valid 24-character product ID.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product\": \"{{productId}}\",\n  \"countedQty\": 18,\n  \"note\": \"Sample physical stock count\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/inventory/discrepancies"
+          }
+        },
+        {
+          "name": "List inventory discrepancies",
+          "description": "Staff see their own reports; admins can view reports across staff.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/inventory/discrepancies?status=open&page=1&limit=20",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Resolve inventory discrepancy",
+          "description": "Admin or superadmin. Set applyAdjustment or dismiss as needed.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"applyAdjustment\": true,\n  \"dismiss\": false,\n  \"resolution\": \"Sample count checked; apply stock adjustment\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/inventory/discrepancies/{{discrepancyId}}/resolve"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audit log",
+      "item": [
+        {
+          "name": "List audit logs",
+          "description": "Superadmin only. Optional filters include actor (user ID), from, and to.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/audit-logs?action=user.create&entityType=User&page=1&limit=20",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{superadminToken}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

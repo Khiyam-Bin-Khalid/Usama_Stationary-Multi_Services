@@ -36,6 +36,21 @@ module.exports = {
     enabled: Boolean(process.env.STRIPE_SECRET_KEY),
   },
 
+  // Online-order pricing knobs (consolidated spec: delivery charges + tax
+  // shown on the checkout summary). Flat fee applied to home-delivery orders.
+  deliveryFee: Number(process.env.DELIVERY_FEE || 0),
+  orderTaxRate: Number(process.env.ORDER_TAX_RATE || 0),
+
   uploadDir: process.env.UPLOAD_DIR || 'uploads',
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB || 5),
+
+  // Product photos go to Cloudinary when configured (persistent CDN storage
+  // for the live website); the desktop app falls back to local disk when
+  // offline or when these are left blank (dev/offline-only setups).
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    enabled: Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET),
+  },
 };

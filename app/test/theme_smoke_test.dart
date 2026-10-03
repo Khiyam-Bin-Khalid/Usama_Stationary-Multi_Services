@@ -1,92 +1,52 @@
-// Smoke test for the brand gradient theme: pumps a representative screen in
-// both brightnesses and checks nothing throws. To eyeball it, temporarily
-// add `await expectLater(find.byType(MaterialApp), matchesGoldenFile('theme.png'));`
-// and run `flutter test --update-goldens test/theme_screenshot_test.dart`.
+// Smoke test for the brand theme: pumps a representative screen and checks
+// the exact palette tokens are what the theme hands out.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:usama_book_depot/core/theme/app_background.dart';
+import 'package:usama_book_depot/core/theme/app_colors.dart';
 import 'package:usama_book_depot/core/theme/app_theme.dart';
 import 'package:usama_book_depot/core/theme/status_style.dart';
 
-Widget _sample(ThemeData theme) {
-  return MaterialApp(
-    theme: theme,
-    debugShowCheckedModeBanner: false,
-    builder: (context, child) => AppBackground(child: child ?? const SizedBox.shrink()),
-    home: Scaffold(
-      appBar: AppBar(title: const Text('Usama Book Depot')),
-      body: Row(
-        children: [
-          NavigationRail(
-            selectedIndex: 0,
-            labelType: NavigationRailLabelType.all,
-            destinations: const [
-              NavigationRailDestination(icon: Icon(Icons.point_of_sale), label: Text('POS')),
-              NavigationRailDestination(icon: Icon(Icons.inventory_2_outlined), label: Text('Inventory')),
-              NavigationRailDestination(icon: Icon(Icons.bar_chart_outlined), label: Text('Reports')),
+void main() {
+  testWidgets('brand theme renders with the spec palette', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 640));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          appBar: AppBar(title: const Text('Usama Book Depot')),
+          body: Column(
+            children: [
+              ElevatedButton(onPressed: () {}, child: const Text('Complete Sale')),
+              const TextField(decoration: InputDecoration(labelText: 'Email')),
+              const Wrap(children: [
+                StatusBadge(label: 'Paid', tone: StatusTone.success),
+                StatusBadge(label: 'Only 3 left', tone: StatusTone.danger),
+                StatusBadge(label: 'Deal', tone: StatusTone.danger, solid: true),
+              ]),
             ],
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Builder(builder: (context) => Text('Heading on gradient', style: Theme.of(context).textTheme.headlineSmall)),
-                  const Text('Body text drawn directly on the gradient background.'),
-                  Builder(
-                    builder: (context) => Text('Secondary text (onSurfaceVariant)',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  ),
-                  const SizedBox(height: 16),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Card surface'),
-                          const SizedBox(height: 8),
-                          const TextField(decoration: InputDecoration(labelText: 'Email')),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              ElevatedButton(onPressed: () {}, child: const Text('Log in')),
-                              const SizedBox(width: 8),
-                              TextButton(onPressed: () {}, child: const Text('Cancel')),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          const Wrap(spacing: 8, children: [
-                            StatusBadge(label: 'Active', tone: StatusTone.success),
-                            StatusBadge(label: 'Low stock', tone: StatusTone.warning),
-                            StatusBadge(label: 'Rejected', tone: StatusTone.danger),
-                            StatusBadge(label: 'Pending', tone: StatusTone.info),
-                            StatusBadge(label: 'Disabled', tone: StatusTone.neutral),
-                          ]),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
-    ),
-  );
-}
+    );
+    await tester.pumpAndSettle();
 
-void main() {
-  for (final entry in {'light': AppTheme.light, 'dark': AppTheme.dark}.entries) {
-    testWidgets('brand gradient theme renders (${entry.key})', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1100, 640));
-      await tester.pumpWidget(_sample(entry.value));
-      await tester.pumpAndSettle();
-      expect(find.text('Usama Book Depot'), findsOneWidget);
-      expect(find.byType(AppBackground), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
-  }
+    final theme = Theme.of(tester.element(find.text('Complete Sale')));
+    expect(theme.colorScheme.primary, AppColors.primaryOrange);
+    expect(theme.colorScheme.error, AppColors.accentRed);
+    expect(theme.scaffoldBackgroundColor, AppColors.background);
+    expect(theme.cardTheme.color, AppColors.surface);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('palette tokens are the exact spec values', () {
+    expect(AppColors.primaryOrange.toARGB32(), 0xFFFF6A00);
+    expect(AppColors.primaryDark.toARGB32(), 0xFFE65E00);
+    expect(AppColors.accentRed.toARGB32(), 0xFFFF4D4D);
+    expect(AppColors.success.toARGB32(), 0xFF16A34A);
+    expect(AppColors.background.toARGB32(), 0xFFFFFFFF);
+    expect(AppColors.surface.toARGB32(), 0xFFF7F7F7);
+    expect(AppColors.textPrimary.toARGB32(), 0xFF1A1A1A);
+    expect(AppColors.textSecondary.toARGB32(), 0xFF6B6B6B);
+    expect(AppColors.border.toARGB32(), 0xFFE5E5E5);
+  });
 }

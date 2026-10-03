@@ -14,6 +14,12 @@ import '../data/remote/sale_api.dart';
 import '../data/remote/sync_api.dart';
 import '../data/remote/token_storage.dart';
 import '../data/remote/user_api.dart';
+import '../data/remote/notification_api.dart';
+import '../data/remote/shift_api.dart';
+import '../data/remote/discrepancy_api.dart';
+import '../data/remote/audit_api.dart';
+import '../data/remote/inventory_api.dart';
+import '../data/models/shift.dart';
 import '../data/repositories/auth_repository.dart';
 import '../data/repositories/pos_repository.dart';
 import '../data/repositories/sync_service.dart';
@@ -34,6 +40,28 @@ final promotionApiProvider = Provider((ref) => PromotionApi(ref.watch(apiClientP
 final orderApiProvider = Provider((ref) => OrderApi(ref.watch(apiClientProvider)));
 final paymentApiProvider = Provider((ref) => PaymentApi(ref.watch(apiClientProvider)));
 final userApiProvider = Provider((ref) => UserApi(ref.watch(apiClientProvider)));
+final notificationApiProvider = Provider((ref) => NotificationApi(ref.watch(apiClientProvider)));
+final shiftApiProvider = Provider((ref) => ShiftApi(ref.watch(apiClientProvider)));
+final discrepancyApiProvider = Provider((ref) => DiscrepancyApi(ref.watch(apiClientProvider)));
+final auditApiProvider = Provider((ref) => AuditApi(ref.watch(apiClientProvider)));
+final inventoryApiProvider = Provider((ref) => InventoryApi(ref.watch(apiClientProvider)));
+
+/// Unread alert count for the nav badge (accentRed). Polled while the shell
+/// is mounted; invalidate after marking notifications read.
+final unreadNotificationsProvider = StreamProvider.autoDispose<int>((ref) async* {
+  final api = ref.watch(notificationApiProvider);
+  while (true) {
+    try {
+      yield await api.unreadCount();
+    } catch (_) {
+      // offline — keep the last value
+    }
+    await Future<void>.delayed(const Duration(seconds: 45));
+  }
+});
+
+/// The signed-in user's currently open shift (null when none).
+final currentShiftProvider = FutureProvider.autoDispose<ShiftReport?>((ref) => ref.watch(shiftApiProvider).current());
 
 final authRepositoryProvider =
     Provider((ref) => AuthRepository(authApi: ref.watch(authApiProvider), tokenStorage: ref.watch(tokenStorageProvider)));
@@ -57,6 +85,7 @@ final syncServiceProvider = Provider<SyncService?>((ref) {
     productApi: ref.watch(productApiProvider),
     promotionApi: ref.watch(promotionApiProvider),
     syncApi: ref.watch(syncApiProvider),
+    saleApi: ref.watch(saleApiProvider),
   );
   service.start();
   ref.onDispose(service.dispose);
@@ -69,9 +98,9 @@ class AuthState extends AsyncNotifier<AppUser?> {
   @override
   Future<AppUser?> build() => ref.watch(authRepositoryProvider).currentUser();
 
-  Future<void> login(String email, String password) async {
+  Future<void> login(String email, String password, {String? role}) async {
     state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() => ref.read(authRepositoryProvider).login(email, password));
+    state = await AsyncValue.guard(() => ref.read(authRepositoryProvider).login(email, password, role: role));
   }
 
   Future<void> registerCustomer({required String name, required String email, required String password, String? phone}) async {

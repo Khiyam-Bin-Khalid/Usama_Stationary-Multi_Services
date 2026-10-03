@@ -22,6 +22,7 @@ const listSalesQuerySchema = Joi.object({
   from: Joi.date(),
   to: Joi.date(),
   category: Joi.string(),
+  shift: Joi.string().hex().length(24),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(200).default(50),
 });

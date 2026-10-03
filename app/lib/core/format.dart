@@ -1,11 +1,18 @@
 import 'package:intl/intl.dart';
 
-final _currencyFormat = NumberFormat.currency(locale: 'en_PK', symbol: 'Rs. ', decimalDigits: 0);
+final _currencyFormat = NumberFormat.currency(
+  locale: 'en_PK',
+  symbol: 'Rs. ',
+  decimalDigits: 0,
+);
 
 String formatCurrency(num value) => _currencyFormat.format(value);
 
 final _dateFormat = DateFormat('d MMM yyyy, h:mm a');
 String formatDateTime(DateTime dt) => _dateFormat.format(dt.toLocal());
+
+final _timeFormat = DateFormat('h:mm a');
+String formatTime(DateTime dt) => _timeFormat.format(dt.toLocal());
 
 final _dayFormat = DateFormat('d MMM');
 final _monthFormat = DateFormat('MMM yyyy');

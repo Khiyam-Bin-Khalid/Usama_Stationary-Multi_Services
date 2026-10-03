@@ -55,6 +55,9 @@ dependencies:
   # Secure local token storage
   flutter_secure_storage: ^9.2.2
 
+  # Password hashing for offline credential verification
+  crypto: ^3.0.3
+
   # Utilities
   uuid: ^4.5.1
   intl: ^0.19.0

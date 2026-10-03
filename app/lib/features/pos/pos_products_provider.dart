@@ -7,6 +7,8 @@ Product productFromCache(ProductsCacheData row) => Product(
       id: row.id,
       name: row.name,
       sku: row.sku,
+      barcode: row.barcode,
+      imageUrl: row.imageUrl,
       category: row.category,
       unit: row.unit,
       price: row.price,
@@ -18,15 +20,15 @@ Product productFromCache(ProductsCacheData row) => Product(
       isActive: row.isActive,
     );
 
-/// Product list for the POS screen: streamed from the local drift cache
-/// (works offline) on native platforms, or fetched directly from the API
-/// on web where there is no local cache (see localDbAvailableProvider).
+/// Product list for the POS quick-sell grid: streamed from the local drift
+/// cache (works offline) on native platforms, or fetched from the API on web.
+/// Spec §4.1: out-of-stock products are excluded (Product.isSellable).
 final posProductsStreamProvider = StreamProvider<List<Product>>((ref) async* {
   final db = ref.watch(appDatabaseProvider);
   if (db != null) {
-    yield* db.watchProducts().map((rows) => rows.map(productFromCache).toList());
+    yield* db.watchProducts().map((rows) => rows.map(productFromCache).where((p) => p.isSellable).toList());
   } else {
-    final products = await ref.watch(productApiProvider).list();
-    yield products;
+    final products = await ref.watch(productApiProvider).list(sellableOnly: true);
+    yield products.where((p) => p.isSellable).toList();
   }
 });
