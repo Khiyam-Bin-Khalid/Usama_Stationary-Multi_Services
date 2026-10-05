@@ -1,0 +1,61 @@
+# Usama Book Depot backend stack: API + MongoDB.
+#
+#   docker compose up -d --build        # build image, start api + mongo
+#   docker compose run --rm api node src/utils/seed.js   # first-time superadmin
+#   docker compose logs -f api
+#   docker compose down                 # stop (data kept in named volumes)
+#   docker compose down -v              # stop AND wipe mongo data + uploads
+#
+# To use MongoDB Atlas instead of the bundled mongo container: delete the
+# MONGODB_URI line under api.environment (so the value in .env is used),
+# remove api.depends_on, and remove the mongo service + mongo_data volume.
+
+services:
+  api:
+    build: .
+    image: usama-book-depot-api:latest
+    container_name: usama_api
+    restart: unless-stopped
+    # Secrets and app settings come from backend/.env (never baked into the image).
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      UPLOAD_DIR: uploads
+      # Overrides the value in .env: inside the compose network Mongo is reachable
+      # by service name, not 127.0.0.1 / Atlas.
+      MONGODB_URI: mongodb://mongo:27017/usama_book_depot
+    ports:
+      - "${API_PORT:-4000}:4000"
+    volumes:
+      # Receipts + locally stored product images survive container restarts.
+      - uploads:/app/uploads
+    depends_on:
+      mongo:
+        condition: service_healthy
+    # The in-process node-cron low-stock job must only run once; never scale
+    # this service above 1 replica.
+    deploy:
+      replicas: 1
+
+  mongo:
+    image: mongo:7
+    container_name: usama_mongo
+    restart: unless-stopped
+    # Not published to the host by default (the shop PC / dev machine may already
+    # run Mongo on 27017 or 27018). Uncomment to reach it from Compass etc.
+    # ports:
+    #   - "27019:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  uploads:
+  mongo_data:

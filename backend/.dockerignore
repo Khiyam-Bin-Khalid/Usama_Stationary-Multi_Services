@@ -1,0 +1,11 @@
+.env*
+.git
+.gitignore
+node_modules
+npm-debug.log*
+coverage
+tests
+uploads
+uploads_e2e
+postman
+scripts

@@ -150,7 +150,7 @@ filters. Product management is Admin+; inventory logs are Staff+.
 | `PATCH /products/:id` | Admin+ | Update product fields, including name, barcode, category, price, reorder level, online/active flags, image, description, and branch (SKU is immutable). |
 | `DELETE /products/:id` | Admin+ | Soft-deactivate a product while retaining it for historical sales and reports. |
 | `POST /products/:id/adjust-stock` | Admin+ | Make a stock adjustment. Body: non-zero `delta` and `reason`. |
-| `POST /products/:id/image` | Admin+ | Upload a product image as multipart form-data, field name `image`. |
+| `POST /products/:id/image` | Admin+ | Upload a product image as multipart form-data, field name `image`. Multer stores uploads in `UPLOAD_DIR` (default `uploads`) with a generated filename; images go to Cloudinary when configured and otherwise remain available locally. |
 | `GET /products/:id/inventory-log` | Staff+ | View the product's inventory movement history. |
 
 ### Inventory — `/inventory`

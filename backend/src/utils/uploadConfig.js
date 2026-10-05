@@ -26,10 +26,8 @@ const receiptUpload = multer({
   },
 });
 
-// Buffered in memory, not written to disk directly: productImageService
-// decides per-upload whether that buffer goes to Cloudinary or local disk.
 const productImageUpload = multer({
-  storage: multer.memoryStorage(),
+  storage,
   limits: { fileSize: env.maxUploadMb * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (!ALLOWED_IMAGE_MIME.includes(file.mimetype)) {

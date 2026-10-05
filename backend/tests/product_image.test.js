@@ -1,5 +1,8 @@
+const fs = require('fs');
+const path = require('path');
 const { app, request, loginAs } = require('./helpers');
 const { ROLES, PRODUCT_CATEGORIES } = require('../src/utils/constants');
+const env = require('../src/config/env');
 
 // Regression: an empty name used to fail Joi validation with a message the
 // desktop/web client swallowed, showing only "Validation failed" with no
@@ -92,6 +95,9 @@ test('upload product image sets imageUrl', async () => {
 
   const getRes = await request(app).get(`/api/products/${id}`);
   expect(getRes.body.product.imageUrl).toBe(imgRes.body.product.imageUrl);
+
+  const imagePath = path.join(__dirname, '..', env.uploadDir, path.basename(imgRes.body.product.imageUrl));
+  expect(fs.existsSync(imagePath)).toBe(true);
 });
 
 test('rejects non-image files and requires admin role', async () => {
