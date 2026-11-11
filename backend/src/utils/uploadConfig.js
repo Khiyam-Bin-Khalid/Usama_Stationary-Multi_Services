@@ -1,40 +1,26 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const { v4: uuid } = require('uuid');
 const env = require('../config/env');
+const AppError = require('./AppError');
 
-const uploadPath = path.join(__dirname, '..', '..', env.uploadDir);
-fs.mkdirSync(uploadPath, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadPath),
-  filename: (req, file, cb) => cb(null, `${uuid()}${path.extname(file.originalname)}`),
-});
+// Files are buffered in memory and handed to services/fileStorageService,
+// which sends them to Cloudinary (or local disk when Cloudinary isn't set up).
+const storage = multer.memoryStorage();
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const ALLOWED_IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
-const receiptUpload = multer({
-  storage,
-  limits: { fileSize: env.maxUploadMb * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (!ALLOWED_MIME.includes(file.mimetype)) {
-      return cb(new Error('Only JPG, PNG, WEBP, or PDF receipts are allowed'));
-    }
-    cb(null, true);
-  },
-});
+function makeUpload(allowed, message) {
+  return multer({
+    storage,
+    limits: { fileSize: env.maxUploadMb * 1024 * 1024, files: 1 },
+    fileFilter: (req, file, cb) => {
+      if (!allowed.includes(file.mimetype)) return cb(new AppError(400, message));
+      cb(null, true);
+    },
+  });
+}
 
-const productImageUpload = multer({
-  storage,
-  limits: { fileSize: env.maxUploadMb * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (!ALLOWED_IMAGE_MIME.includes(file.mimetype)) {
-      return cb(new Error('Only JPG, PNG, or WEBP images are allowed'));
-    }
-    cb(null, true);
-  },
-});
+const receiptUpload = makeUpload(ALLOWED_MIME, 'Only JPG, PNG, WEBP, or PDF receipts are allowed');
+const productImageUpload = makeUpload(ALLOWED_IMAGE_MIME, 'Only JPG, PNG, or WEBP images are allowed');
 
 module.exports = { receiptUpload, productImageUpload };

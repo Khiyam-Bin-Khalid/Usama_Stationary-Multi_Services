@@ -55,6 +55,7 @@ class Permissions {
     if (path.startsWith('/admin/delivery')) return manageDelivery(role);
     if (path.startsWith('/admin/payments')) return reviewPayments(role);
     if (path.startsWith('/admin/promotions')) return managePromotions(role);
+    if (path.startsWith('/records')) return consolidatedReports(role);
     return UserRole.staffRoles.contains(role);
   }
 }

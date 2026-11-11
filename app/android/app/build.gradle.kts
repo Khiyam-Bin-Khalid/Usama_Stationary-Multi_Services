@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "pk.com.usamabookdepot.usama_book_depot"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

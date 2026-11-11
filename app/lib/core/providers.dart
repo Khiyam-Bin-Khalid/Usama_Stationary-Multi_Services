@@ -21,6 +21,7 @@ import '../data/remote/audit_api.dart';
 import '../data/remote/inventory_api.dart';
 import '../data/models/shift.dart';
 import '../data/repositories/auth_repository.dart';
+import '../data/repositories/inventory_repository.dart';
 import '../data/repositories/pos_repository.dart';
 import '../data/repositories/sync_service.dart';
 
@@ -74,8 +75,17 @@ final appDatabaseProvider = Provider<AppDatabase?>((ref) {
   return db;
 });
 
-final posRepositoryProvider =
-    Provider((ref) => PosRepository(db: ref.watch(appDatabaseProvider), saleApi: ref.watch(saleApiProvider)));
+final posRepositoryProvider = Provider((ref) => PosRepository(
+      db: ref.watch(appDatabaseProvider),
+      saleApi: ref.watch(saleApiProvider),
+      isOffline: () => ref.read(syncServiceProvider)?.isOffline ?? false,
+    ));
+
+final inventoryRepositoryProvider = Provider((ref) => InventoryRepository(
+      db: ref.watch(appDatabaseProvider),
+      api: ref.watch(productApiProvider),
+      isOffline: () => ref.read(syncServiceProvider)?.isOffline ?? false,
+    ));
 
 final syncServiceProvider = Provider<SyncService?>((ref) {
   final db = ref.watch(appDatabaseProvider);
@@ -86,11 +96,31 @@ final syncServiceProvider = Provider<SyncService?>((ref) {
     promotionApi: ref.watch(promotionApiProvider),
     syncApi: ref.watch(syncApiProvider),
     saleApi: ref.watch(saleApiProvider),
+    tokenStorage: ref.watch(tokenStorageProvider),
+    currentUser: () => ref.read(authStateProvider).valueOrNull,
   );
   service.start();
+  // The app starts before anyone is signed in, so sync as soon as someone is.
+  ref.listen(authStateProvider, (previous, next) {
+    if (previous?.valueOrNull == null && next.valueOrNull != null) service.syncNow();
+  });
   ref.onDispose(service.dispose);
   return service;
 });
+
+/// Current sync state, with the latest value available right away.
+final syncStatusProvider = StreamProvider<SyncStatus>((ref) async* {
+  final service = ref.watch(syncServiceProvider);
+  if (service == null) return;
+  yield service.status;
+  yield* service.statusStream;
+});
+
+/// How many sales and product changes are waiting for the server.
+final unsyncedCountProvider = StreamProvider<int>((ref) => ref.watch(appDatabaseProvider)?.watchUnsyncedCount() ?? Stream.value(0));
+
+/// Ticks when a sync changed server data; watch to reload API-backed lists.
+final syncChangesProvider = StreamProvider<int>((ref) => ref.watch(syncServiceProvider)?.changes ?? const Stream.empty());
 
 /// Current authenticated user, resolved once at startup and updated by
 /// login/logout. AsyncValue.loading() while we check for a stored token.

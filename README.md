@@ -13,6 +13,9 @@ Built from `Usama_Book_Depot_POS_SRS.docx`. Two parts:
 
 See `backend/README.md` and `app/README.md` for setup. Quick start:
 
+From the repository root, `npm run dev` starts the backend API. Complete the
+backend setup below first; the Flutter app is run separately from `app/`.
+
 ```bash
 # Terminal 1 — backend (needs a MongoDB instance — see backend/README.md)
 cd backend
@@ -60,6 +63,103 @@ app also add its public origin to `CLIENT_ORIGIN` in `backend/.env`.
 
 Only desktop and mobile builds keep the offline SQLite cache; the web build talks to the API
 directly and needs a connection (per the SRS).
+
+## Testing on several devices (same Wi-Fi / LAN)
+
+One PC runs the backend; every other device (desktop POS, phone browser, Android APK) talks to
+it over the local network. The app's default API URL is `http://localhost:4000/api` (Android
+emulator: `http://10.0.2.2:4000/api`), so the backend must listen on **port 4000** and any other
+device must be given the PC's LAN IP via `--dart-define=API_BASE_URL=...`.
+
+### 1. Find the backend PC's LAN IP
+
+```bash
+hostname -I | awk '{print $1}'     # Linux, e.g. 10.181.237.77
+ipconfig                           # Windows: "IPv4 Address"
+```
+
+The examples below use `10.181.237.77`; replace it with yours. The IP can change after a reboot
+or a Wi-Fi reconnect — if it does, rebuild the web app / APK with the new IP.
+
+### 2. Start the backend on port 4000
+
+Pick **one** — they use different databases, so data added in one won't show in the other.
+
+```bash
+# Option A — npm, uses MONGODB_URI from backend/.env (e.g. Atlas). PORT=4000 in .env.
+cd backend
+npm install                 # first time only
+npm run seed                # first time only: superadmin + default categories + sample products
+npm run dev                 # type `rs` + Enter to restart after editing .env
+
+# Option B — Docker, API + its own MongoDB (data kept in Docker volumes)
+cd backend
+docker compose up -d --build
+docker compose run --rm api node src/utils/seed.js   # first time only
+docker compose logs -f api
+docker compose down         # stop (add -v to also wipe the database + uploads)
+```
+
+Check it from the PC **and** from another device's browser:
+
+```bash
+curl http://localhost:4000/health          # {"status":"ok",...}
+curl http://10.181.237.77:4000/health
+```
+
+Allow browsers on other devices to call the API — in `backend/.env` (then restart the backend):
+
+```
+CLIENT_ORIGIN=http://10.181.237.77:8080,http://localhost:8080,http://localhost:5173
+```
+
+If other devices can't connect, open the ports on the backend PC's firewall:
+
+```bash
+sudo ufw allow 4000 && sudo ufw allow 8080
+```
+
+### 3. Run the app on each device (commands from `app/`)
+
+| Device | Command |
+|---|---|
+| **Linux desktop POS — same PC as backend** (dev) | `flutter run -d linux` |
+| Linux desktop POS — same PC (release binary) | `flutter build linux --release` → `./build/linux/x64/release/bundle/usama_book_depot` |
+| Linux / Windows desktop — **another PC** | `flutter build linux --release --dart-define=API_BASE_URL=http://10.181.237.77:4000/api` (or `flutter build windows ...`), copy the whole `bundle/` (or `Release/`) folder and run it there |
+| **Customer web app** for phones / other PCs (release) | `flutter build web --release --dart-define=API_BASE_URL=http://10.181.237.77:4000/api` then `cd build/web && python3 -m http.server 8080 --bind 0.0.0.0` → open **http://10.181.237.77:8080** on any device |
+| Web app, dev with hot reload, reachable from the LAN | `flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080 --dart-define=API_BASE_URL=http://10.181.237.77:4000/api` |
+| Web app in Chrome on the same PC | `flutter run -d chrome` |
+| **Android phone** via USB (debug) | `flutter devices` then `flutter run -d <device-id> --dart-define=API_BASE_URL=http://10.181.237.77:4000/api` |
+| Android phone — install an APK | `flutter build apk --release --dart-define=API_BASE_URL=http://10.181.237.77:4000/api` → copy `build/app/outputs/flutter-apk/app-release.apk` to the phone and install |
+| Android emulator | `flutter run -d emulator-5554` (uses `10.0.2.2:4000` automatically) |
+
+Typical two-device test: the **Linux PC** runs the backend plus the desktop POS (log in as
+**Super Admin** with `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` from `backend/.env`); a **phone**
+opens `http://10.181.237.77:8080`, registers as a customer and places an order. Products added
+on the POS appear in the storefront and the order appears in the POS *Orders* screen.
+
+> Android release builds block plain `http://` traffic by default (Android 9+). For an APK talking
+> to a LAN backend over HTTP, add `android:usesCleartextTraffic="true"` to the `<application>` tag
+> in `app/android/app/src/main/AndroidManifest.xml`, or put the backend behind HTTPS.
+
+### 4. Stop everything
+
+```bash
+# Ctrl+C in the `npm run dev` terminal   (or: cd backend && docker compose down)
+pkill -f "http.server 8080"              # web server
+# close the desktop app window / press `q` in the `flutter run` terminal
+```
+
+### Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| "The connection errored: Connection refused" on the dashboard and other screens | The backend isn't on the port the app uses. Check `ss -ltnp \| grep 4000` and `PORT=4000` in `backend/.env`; a build made with `--dart-define` must match the running backend's host and port. |
+| Web app loads but login fails with a network / CORS error | The web app's origin (e.g. `http://10.181.237.77:8080`) is missing from `CLIENT_ORIGIN`; add it and restart the backend. |
+| Works on the PC, not on the phone | Different Wi-Fi network, firewall (`ufw allow 4000 8080`), the PC's IP changed, or the build still points at `localhost`. |
+| Product photo upload says "File upload failed" | Cloudinary rejected the upload. The backend log shows the reason, e.g. `403` = the API key in `.env` lacks upload ("create") permission; fix it in Cloudinary → Settings → API Keys. |
+| `GVFS-RemoteVolumeMonitor-WARNING ... GoaVolumeMonitor is not supported` in the Linux terminal | Harmless GTK message, not an app error. Hide it with `GIO_USE_VOLUME_MONITOR=unix flutter run -d linux`. |
+| Super admin login rejected on a fresh database | Run the seed once (`npm run seed`, or the `docker compose run ... seed.js` command above). |
 
 ## Roles and who manages them (spec §2)
 
@@ -157,6 +257,49 @@ primaryDark `#E65E00`, accentRed `#FF4D4D`, success `#16A34A`, background `#FFFF
 `app_theme.dart` applies them (orange primary buttons / selected tabs / selected role, primaryDark
 on hover/press and focused inputs, accentRed for low-stock, deals, delete and errors, success for
 paid/synced/confirmation toasts, surface for cards/sidebar/inputs, border for outlines/dividers).
+
+## Working offline (desktop and mobile apps)
+
+The web build needs a connection. Desktop and mobile keep working when the internet or the server
+is down; the red banner says so, and everything syncs by itself when the server is back (it retries
+every 30 seconds, or use **Sync now** on the sync queue).
+
+| Works offline | Needs the server |
+|---|---|
+| Sign-in (Super Admin, Admin, Staff) | Orders and payment review |
+| Sales (POS) and Daily Sale | Promotions |
+| Add, edit, delete products, adjust stock (Admin up) | Staff accounts and audit log |
+| Product photos (held on the device, uploaded on sync) | Shifts, stock movement history, discrepancy reports |
+| Dashboard figures, **Daily records** | Consolidated reports and charts |
+
+- **Offline sign-in:** an account must have signed in online on that device once. Several accounts
+  can share a device. Five wrong passwords lock the account for 5 minutes, and offline access
+  expires if the server hasn't seen the account for 30 days.
+- **Daily records** (`/records`, Admin up) keeps the last 31 days on the device: revenue per date
+  (cash, card, invoices, items, tap a date for every line sold) and a stock record of what sold,
+  what remains and what has sold out. The server keeps every sale permanently; only the device copy
+  is limited. Anything not yet synced is never removed.
+- **Sync queue** (sidebar sync status, `/sync`) lists what's waiting. Sales and product changes reach
+  the server dated when they happened, credited to whoever made them. A change the server refuses,
+  such as a sale of stock another till already sold, waits there for an Admin to retry or discard.
+
+## Automated tests
+
+```bash
+cd backend && npm test          # API tests, in-memory MongoDB
+cd app && flutter test          # unit, migration and widget tests
+
+# End-to-end, against a throwaway stack (never touches the database in backend/.env):
+node backend/scripts/e2e-stack.js                                      # leave running
+cd app
+E2E_STACK=1 flutter test test/e2e/backend_e2e_test.dart                # real client, real API, connection cut
+flutter test --platform chrome test/e2e/web_upload_test.dart           # web upload in a real browser
+flutter test integration_test/offline_admin_flow_test.dart -d linux    # real screens, full offline session
+
+# One real photo to the Cloudinary account in backend/.env:
+node backend/scripts/e2e-stack.js --real-cloudinary                    # leave running
+REAL_CLOUDINARY=1 flutter test test/e2e/real_cloudinary_test.dart      # from app/
+```
 
 ## What's postponed (by design, confirmed with the client)
 

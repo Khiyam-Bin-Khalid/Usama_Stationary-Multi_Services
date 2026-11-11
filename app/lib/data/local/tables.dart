@@ -8,6 +8,7 @@ class ProductsCache extends Table {
   TextColumn get sku => text()();
   TextColumn get barcode => text().nullable()();
   TextColumn get imageUrl => text().nullable()();
+  TextColumn get description => text().nullable()();
   TextColumn get category => text()();
   TextColumn get unit => text()();
   RealColumn get price => real()();
@@ -47,8 +48,28 @@ class PendingSales extends Table {
   BoolColumn get synced => boolean().withDefault(const Constant(false))();
   TextColumn get syncError => text().nullable()();
 
+  /// Who rang the sale up. Null only for rows queued before schema v4.
+  TextColumn get cashierId => text().nullable()();
+  TextColumn get cashierName => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {clientTxnId};
+}
+
+/// Product changes an Admin made while offline, replayed in [seq] order: a
+/// later op can depend on the id the server assigns to a product_create. opId
+/// makes a replay safe if the server's answer is lost on the way back.
+class PendingOps extends Table {
+  IntColumn get seq => integer().autoIncrement()();
+  TextColumn get opId => text().unique()();
+  TextColumn get type => text()(); // product_create|product_update|product_delete|stock_adjust|product_image
+  TextColumn get productId => text().nullable()(); // may be a local- id until its create is synced
+  TextColumn get label => text()(); // shown in the sync queue
+  TextColumn get payloadJson => text()();
+  BlobColumn get imageBytes => blob().nullable()();
+  TextColumn get imageName => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  TextColumn get lastError => text().nullable()();
 }
 
 class SyncMeta extends Table {

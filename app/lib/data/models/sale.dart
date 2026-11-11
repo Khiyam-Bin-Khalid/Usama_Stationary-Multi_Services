@@ -66,7 +66,12 @@ class Sale {
   final String paymentMethod;
   final DateTime createdAt;
   final bool recordedOffline;
+  final String? cashierId;
   final String? cashierName;
+
+  /// Saved on this device but not yet confirmed by the server. Device state,
+  /// never serialized.
+  final bool pendingSync;
 
   const Sale({
     required this.id,
@@ -79,8 +84,26 @@ class Sale {
     required this.paymentMethod,
     required this.createdAt,
     required this.recordedOffline,
+    this.cashierId,
     this.cashierName,
+    this.pendingSync = false,
   });
+
+  Sale withPendingSync(bool pending) => Sale(
+    id: id,
+    clientTxnId: clientTxnId,
+    invoiceNumber: invoiceNumber,
+    items: items,
+    subtotal: subtotal,
+    taxAmount: taxAmount,
+    total: total,
+    paymentMethod: paymentMethod,
+    createdAt: createdAt,
+    recordedOffline: recordedOffline,
+    cashierId: cashierId,
+    cashierName: cashierName,
+    pendingSync: pending,
+  );
 
   factory Sale.fromJson(Map<String, dynamic> json) => Sale(
     id: json['_id'] as String,
@@ -95,6 +118,9 @@ class Sale {
     paymentMethod: json['paymentMethod'] as String,
     createdAt: DateTime.parse(json['createdAt'] as String),
     recordedOffline: json['recordedOffline'] as bool? ?? false,
+    cashierId: json['cashier'] is Map
+        ? (json['cashier'] as Map)['_id'] as String?
+        : json['cashier'] as String?,
     cashierName: json['cashier'] is Map
         ? (json['cashier'] as Map)['name'] as String?
         : null,
@@ -111,6 +137,7 @@ class Sale {
     'paymentMethod': paymentMethod,
     'createdAt': createdAt.toIso8601String(),
     'recordedOffline': recordedOffline,
-    if (cashierName != null) 'cashier': {'name': cashierName},
+    if (cashierId != null || cashierName != null)
+      'cashier': {'_id': cashierId, 'name': cashierName},
   };
 }

@@ -3,6 +3,11 @@ const path = require('path');
 const { app, request, loginAs } = require('./helpers');
 const { ROLES, PRODUCT_CATEGORIES } = require('../src/utils/constants');
 const env = require('../src/config/env');
+const cloudinary = require('../src/utils/cloudinary');
+
+// Cloudinary stays "not configured" (local disk) unless a test opts in, and
+// never talks to the real API.
+jest.mock('../src/utils/cloudinary', () => ({ isCloudinaryConfigured: jest.fn(() => false), uploadBuffer: jest.fn() }));
 
 // Regression: an empty name used to fail Joi validation with a message the
 // desktop/web client swallowed, showing only "Validation failed" with no
@@ -54,6 +59,23 @@ test('SKU is auto-generated per category and barcode stays a separate optional f
   expect(bySku.body.products.map((p) => p.sku).sort()).toEqual(['STN-00001', 'STN-00002']);
 });
 
+// Regression: the in-stock filter used to overwrite the search, so customers
+// searching the storefront got the whole catalog back.
+test('storefront search only returns matching, in-stock products', async () => {
+  const { token } = await loginAs(ROLES.ADMIN);
+  const create = (body) => request(app).post('/api/products').set('Authorization', `Bearer ${token}`)
+    .send({ category: PRODUCT_CATEGORIES.STATIONERY, price: 1, ...body });
+  await create({ name: 'Blue Notebook', currentStock: 3 });
+  await create({ name: 'Red Notebook', currentStock: 0 });
+  await create({ name: 'Stapler', currentStock: 3 });
+
+  const anonymous = await request(app).get('/api/products?q=notebook');
+  expect(anonymous.body.products.map((p) => p.name)).toEqual(['Blue Notebook']);
+
+  const pos = await request(app).get('/api/products?q=notebook&sellableOnly=true').set('Authorization', `Bearer ${token}`);
+  expect(pos.body.products.map((p) => p.name)).toEqual(['Blue Notebook']);
+});
+
 test('product records and exposes who created it', async () => {
   const { token, user } = await loginAs(ROLES.ADMIN);
 
@@ -98,6 +120,65 @@ test('upload product image sets imageUrl', async () => {
 
   const imagePath = path.join(__dirname, '..', env.uploadDir, path.basename(imgRes.body.product.imageUrl));
   expect(fs.existsSync(imagePath)).toBe(true);
+});
+
+test('replacing a local image with a Cloudinary upload deletes the local file', async () => {
+  const { token } = await loginAs(ROLES.ADMIN);
+  const createRes = await request(app)
+    .post('/api/products')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'Eraser', category: PRODUCT_CATEGORIES.STATIONERY, price: 5 });
+  const id = createRes.body.product._id;
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+  const upload = () => request(app)
+    .post(`/api/products/${id}/image`)
+    .set('Authorization', `Bearer ${token}`)
+    .attach('image', png, { filename: 'eraser.png', contentType: 'image/png' });
+
+  const localRes = await upload();
+  const localPath = path.join(__dirname, '..', env.uploadDir, path.basename(localRes.body.product.imageUrl));
+  expect(fs.existsSync(localPath)).toBe(true);
+
+  const cloudUrl = 'https://res.cloudinary.com/demo/image/upload/usama-stationary/products/eraser.png';
+  cloudinary.isCloudinaryConfigured.mockReturnValue(true);
+  cloudinary.uploadBuffer.mockResolvedValue({ secure_url: cloudUrl });
+  try {
+    const cloudRes = await upload();
+    expect(cloudRes.status).toBe(200);
+    expect(cloudRes.body.product.imageUrl).toBe(cloudUrl);
+    expect(fs.existsSync(localPath)).toBe(false);
+  } finally {
+    cloudinary.isCloudinaryConfigured.mockReturnValue(false);
+  }
+});
+
+test('a failed Cloudinary upload keeps the existing local image', async () => {
+  const { token } = await loginAs(ROLES.ADMIN);
+  const createRes = await request(app)
+    .post('/api/products')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'Sharpener', category: PRODUCT_CATEGORIES.STATIONERY, price: 5 });
+  const id = createRes.body.product._id;
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+  const upload = () => request(app)
+    .post(`/api/products/${id}/image`)
+    .set('Authorization', `Bearer ${token}`)
+    .attach('image', png, { filename: 'sharpener.png', contentType: 'image/png' });
+
+  const localRes = await upload();
+  const localPath = path.join(__dirname, '..', env.uploadDir, path.basename(localRes.body.product.imageUrl));
+
+  cloudinary.isCloudinaryConfigured.mockReturnValue(true);
+  cloudinary.uploadBuffer.mockRejectedValue(new Error('403 Forbidden'));
+  try {
+    const failRes = await upload();
+    expect(failRes.status).toBe(502);
+    const getRes = await request(app).get(`/api/products/${id}`);
+    expect(getRes.body.product.imageUrl).toBe(localRes.body.product.imageUrl);
+    expect(fs.existsSync(localPath)).toBe(true);
+  } finally {
+    cloudinary.isCloudinaryConfigured.mockReturnValue(false);
+  }
 });
 
 test('rejects non-image files and requires admin role', async () => {

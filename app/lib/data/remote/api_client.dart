@@ -8,9 +8,12 @@ import 'token_storage.dart';
 class ApiClient {
   final Dio dio;
   final TokenStorage tokenStorage;
-  bool _isRefreshing = false;
+  final String _baseUrl;
+  Future<bool>? _refreshing;
 
-  ApiClient(this.tokenStorage) : dio = Dio(BaseOptions(baseUrl: AppConfig.apiBaseUrl, connectTimeout: const Duration(seconds: 10))) {
+  ApiClient(this.tokenStorage, {String? baseUrl})
+      : _baseUrl = baseUrl ?? AppConfig.apiBaseUrl,
+        dio = Dio(BaseOptions(baseUrl: baseUrl ?? AppConfig.apiBaseUrl, connectTimeout: const Duration(seconds: 10))) {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
@@ -21,11 +24,10 @@ class ApiClient {
         onError: (error, handler) async {
           final isUnauthorized = error.response?.statusCode == 401;
           final isRetry = error.requestOptions.extra['retried'] == true;
-          if (isUnauthorized && !isRetry && !_isRefreshing) {
-            _isRefreshing = true;
+          if (isUnauthorized && !isRetry) {
             try {
-              final refreshed = await _refreshToken();
-              _isRefreshing = false;
+              // Parallel 401s share one refresh instead of racing each other.
+              final refreshed = await (_refreshing ??= _refreshToken().whenComplete(() => _refreshing = null));
               if (refreshed) {
                 final opts = error.requestOptions;
                 opts.extra['retried'] = true;
@@ -34,8 +36,10 @@ class ApiClient {
                 final response = await dio.fetch(opts);
                 return handler.resolve(response);
               }
+            } on DioException catch (e) {
+              return handler.next(e);
             } catch (_) {
-              _isRefreshing = false;
+              // Fall through and report the original 401.
             }
           }
           handler.next(error);
@@ -48,16 +52,17 @@ class ApiClient {
     final refreshToken = await tokenStorage.refreshToken;
     if (refreshToken == null) return false;
     try {
-      final response = await Dio(BaseOptions(baseUrl: AppConfig.apiBaseUrl)).post(
+      final response = await Dio(BaseOptions(baseUrl: _baseUrl, connectTimeout: const Duration(seconds: 10))).post(
         '/auth/refresh',
         data: {'refreshToken': refreshToken},
       );
       await tokenStorage.updateAccessToken(response.data['accessToken'] as String);
       return true;
-    } catch (_) {
-      // Hard-wipe tokens and credential cache when the refresh token itself
-      // is rejected — the user must log in online again.
-      await tokenStorage.clearAll();
+    } on DioException catch (e) {
+      // Only a real rejection ends the session. A dropped connection during a
+      // refresh must not log the user out or lose their offline access.
+      final status = e.response?.statusCode;
+      if (status == 400 || status == 401 || status == 403) await tokenStorage.clearAll();
       return false;
     }
   }
@@ -72,13 +77,20 @@ class ApiException implements Exception {
   // this — a genuine "insufficient stock" rejection should surface as an
   // error, not silently disappear into the offline queue.
   final bool isNetworkError;
+  final int? statusCode;
 
-  ApiException(this.message, [this.details, this.isNetworkError = false]);
+  ApiException(this.message, [this.details, this.isNetworkError = false, this.statusCode]);
+
+  /// The server can't do its job right now: unreachable, or reachable but
+  /// failing (5xx, e.g. the API is up but its database connection dropped).
+  /// Anything an offline-capable feature can safely retry later belongs here.
+  bool get isServerDown => isNetworkError || (statusCode != null && statusCode! >= 500);
 
   factory ApiException.fromDioError(DioException e) {
     final data = e.response?.data;
+    final status = e.response?.statusCode;
     if (data is Map && data['error'] != null) {
-      return ApiException(data['error'] as String, data['details'] as List<dynamic>?, false);
+      return ApiException(data['error'] as String, data['details'] as List<dynamic>?, false, status);
     }
     const networkTypes = {
       DioExceptionType.connectionError,
@@ -87,7 +99,10 @@ class ApiException implements Exception {
       DioExceptionType.sendTimeout,
       DioExceptionType.unknown,
     };
-    return ApiException(e.message ?? 'Network error', null, networkTypes.contains(e.type));
+    if (networkTypes.contains(e.type)) {
+      return ApiException('You are offline. This needs a connection to the server.', null, true);
+    }
+    return ApiException(e.message ?? 'Request failed', null, false, status);
   }
 
   @override

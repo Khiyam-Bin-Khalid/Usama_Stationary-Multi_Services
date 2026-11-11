@@ -11,9 +11,10 @@ import '../../core/theme/status_style.dart';
 import '../../data/models/product.dart';
 import '../../widgets/product_image.dart';
 
-final _inventoryListProvider = FutureProvider.autoDispose<List<Product>>(
-  (ref) => ref.watch(productApiProvider).list(),
-);
+final _inventoryListProvider = FutureProvider.autoDispose<List<Product>>((ref) {
+  ref.watch(syncChangesProvider); // reload after queued changes reach the server
+  return ref.watch(inventoryRepositoryProvider).list();
+});
 
 /// Spec §2: Admin / Super Admin add, edit, delete products and adjust stock.
 /// Staff get a read-only view and can *report* a discrepancy instead.
@@ -217,9 +218,9 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     );
     if (ok != true) return;
     try {
-      await ref.read(productApiProvider).delete(product.id);
+      final queued = await ref.read(inventoryRepositoryProvider).delete(product);
       ref.invalidate(_inventoryListProvider);
-      _toast('${product.name} deleted');
+      _toast(queued ? '${product.name} deleted on this device · will sync when back online' : '${product.name} deleted');
     } catch (e) {
       _toast(_errorText(e), error: true);
     }
@@ -322,16 +323,16 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
               if (delta == null || delta == 0 || reasonController.text.isEmpty)
                 return;
               try {
-                await ref
-                    .read(productApiProvider)
+                final queued = await ref
+                    .read(inventoryRepositoryProvider)
                     .adjustStock(
-                      product.id,
+                      product,
                       delta: delta,
                       reason: reasonController.text,
                     );
                 if (dialogContext.mounted) Navigator.pop(dialogContext);
                 ref.invalidate(_inventoryListProvider);
-                _toast('Stock updated');
+                _toast(queued ? 'Stock updated on this device · will sync when back online' : 'Stock updated');
               } catch (e) {
                 _toast(_errorText(e), error: true);
               }
@@ -556,36 +557,42 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                       };
                       setDialogState(() => saving = true);
                       try {
-                        final Product product;
-                        if (existing == null) {
-                          product = await ref.read(productApiProvider).create({
-                            ...payload,
-                            if (skuController.text.trim().isNotEmpty)
-                              'sku': skuController.text.trim(),
-                            'currentStock':
-                                int.tryParse(stockController.text) ?? 0,
-                          });
-                        } else {
-                          product = await ref
-                              .read(productApiProvider)
-                              .update(existing.id, payload);
-                        }
-                        if (pickedImageBytes != null) {
-                          await ref
-                              .read(productApiProvider)
-                              .uploadImage(
-                                product.id,
-                                pickedImageBytes!,
-                                pickedImage!.name,
+                        final repo = ref.read(inventoryRepositoryProvider);
+                        final result = existing == null
+                            ? await repo.create(
+                                {
+                                  ...payload,
+                                  if (skuController.text.trim().isNotEmpty)
+                                    'sku': skuController.text.trim(),
+                                  'currentStock':
+                                      int.tryParse(stockController.text) ?? 0,
+                                },
+                                image: pickedImageBytes,
+                                imageName: pickedImage?.name,
+                              )
+                            : await repo.update(
+                                existing,
+                                payload,
+                                image: pickedImageBytes,
+                                imageName: pickedImage?.name,
                               );
-                        }
+                        // The product is saved from here on: close the form
+                        // even if the photo failed, or Save again would add a
+                        // second copy of it.
                         if (dialogContext.mounted) Navigator.pop(dialogContext);
                         ref.invalidate(_inventoryListProvider);
-                        _toast(
-                          existing == null
-                              ? 'Product added · SKU ${product.sku}'
-                              : 'Product saved',
-                        );
+                        final warning = result.imageWarning;
+                        if (warning != null) {
+                          _toast(warning, error: true);
+                        } else if (result.queued) {
+                          _toast('Saved on this device · will sync when back online');
+                        } else {
+                          _toast(
+                            existing == null
+                                ? 'Product added · SKU ${result.product.sku}'
+                                : 'Product saved',
+                          );
+                        }
                       } catch (e) {
                         setDialogState(() => saving = false);
                         _toast(_errorText(e), error: true);

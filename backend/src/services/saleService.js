@@ -18,7 +18,7 @@ const { INVENTORY_LOG_TYPES, JOB_STATUSES } = require('../utils/constants');
  * counter/branch deployment; revisit with transactions if scaling to a
  * multi-terminal, high-concurrency setup.
  */
-async function createSale({ clientTxnId, items, paymentMethod, taxRate, branch, recordedOffline, cashierId, cashierRole }) {
+async function createSale({ clientTxnId, items, paymentMethod, taxRate, branch, recordedOffline, cashierId, cashierRole, soldAt }) {
   const existing = await Sale.findOne({ clientTxnId });
   if (existing) return { sale: existing, alreadyExisted: true };
 
@@ -66,7 +66,16 @@ async function createSale({ clientTxnId, items, paymentMethod, taxRate, branch, 
     }
   }
 
-  const shift = await currentOpenShift(cashierId);
+  // Offline sales keep the time they really happened so they count on the
+  // right day in reports. A device clock ahead of the server can't date a
+  // sale in the future.
+  const now = new Date();
+  const saleTime = soldAt && new Date(soldAt) < now ? new Date(soldAt) : now;
+
+  // Only attach to the open shift if the sale happened during it; a sale from
+  // before this shift opened must not land in this drawer's cash count.
+  const openShift = await currentOpenShift(cashierId);
+  const shift = openShift && openShift.openedAt <= saleTime ? openShift : null;
 
   const sale = await Sale.create({
     clientTxnId,
@@ -81,6 +90,7 @@ async function createSale({ clientTxnId, items, paymentMethod, taxRate, branch, 
     cashier: cashierId,
     branch,
     recordedOffline: Boolean(recordedOffline),
+    createdAt: saleTime,
   });
 
   return { sale, alreadyExisted: false };

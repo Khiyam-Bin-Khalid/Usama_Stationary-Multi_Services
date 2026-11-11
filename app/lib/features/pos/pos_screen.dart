@@ -10,6 +10,7 @@ import '../../data/models/product.dart';
 import '../../data/models/sale.dart';
 import '../../data/remote/api_client.dart';
 import '../../data/repositories/pos_repository.dart';
+import '../../data/repositories/sync_service.dart';
 import '../../core/providers.dart';
 import '../../widgets/product_image.dart';
 import 'pos_products_provider.dart';
@@ -51,14 +52,25 @@ class PosScreen extends StatelessWidget {
 final _todaySalesProvider = FutureProvider.autoDispose<List<Sale>>((ref) async {
   final now = DateTime.now();
   final startOfDay = DateTime(now.year, now.month, now.day);
+  final db = ref.read(appDatabaseProvider);
+  final user = ref.read(authStateProvider).valueOrNull;
+
+  // The device holds everyone's sales; staff still only see their own (spec §3.3).
+  Future<List<Sale>> local() async {
+    if (db == null) return const [];
+    final sales = await db.localSalesInRange(startOfDay, now);
+    return user?.role == UserRole.staff ? sales.where((s) => s.cashierId == user?.id).toList() : sales;
+  }
+
+  if (ref.read(syncServiceProvider)?.isOffline ?? false) return local();
   try {
-    return await ref.watch(saleApiProvider).listSales(from: startOfDay, to: now);
+    final sales = await ref.watch(saleApiProvider).listSales(from: startOfDay, to: now);
+    // Sales still in the queue are on this device only.
+    final known = {for (final s in sales) s.clientTxnId};
+    return [...sales, ...(await local()).where((s) => s.pendingSync && !known.contains(s.clientTxnId))];
   } on ApiException catch (e) {
-    if (!e.isNetworkError) rethrow;
-    // Offline — serve from the local cache seeded by PosRepository.
-    final db = ref.read(appDatabaseProvider);
-    if (db == null) rethrow;
-    return db.localSalesInRange(startOfDay, now);
+    if (!e.isServerDown || db == null) rethrow;
+    return local();
   }
 });
 
@@ -206,13 +218,14 @@ class _NewSaleTabState extends ConsumerState<_NewSaleTab> {
     if (cart.isEmpty) return;
     setState(() => _checkingOut = true);
     try {
-      final cashierName = ref.read(authStateProvider).valueOrNull?.name;
+      final cashier = ref.read(authStateProvider).valueOrNull;
       final result = await ref
           .read(posRepositoryProvider)
           .recordSale(
             items: cart,
             paymentMethod: paymentMethod,
-            cashierName: cashierName,
+            cashierId: cashier?.id,
+            cashierName: cashier?.name,
           );
       ref.read(posCartProvider.notifier).clear();
       if (!mounted) return;
@@ -247,7 +260,9 @@ class _NewSaleTabState extends ConsumerState<_NewSaleTab> {
     final productsAsync = ref.watch(posProductsStreamProvider);
     final cart = ref.watch(posCartProvider);
     final isWide = MediaQuery.of(context).size.width >= 900;
-    final shiftOpen = ref.watch(currentShiftProvider).valueOrNull != null;
+    // Shifts live on the server, so offline there's nothing to warn about.
+    final isOffline = ref.watch(syncStatusProvider).valueOrNull == SyncStatus.offline;
+    final shiftOpen = isOffline || ref.watch(currentShiftProvider).valueOrNull != null;
 
     final productPane = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -19,83 +19,105 @@ class SaleRecordResult {
 /// away so the cashier's next sale sees accurate numbers.
 ///
 /// In both outcomes, the sale is written to [LocalSalesCache] so the
-/// "Daily Sale" tab can show it even when the device is offline.
+/// "Daily Sale" tab and daily records can show it while offline.
 class PosRepository {
   // Null on web: the storefront/admin-web build has no local SQLite cache
   // (see connection_web.dart), so there's nowhere to queue an offline sale —
   // web callers just surface the network error instead.
   final AppDatabase? db;
   final SaleApi saleApi;
+
+  /// True while sync knows the server is unreachable: go straight to the local
+  /// queue rather than making the cashier wait out a connection timeout.
+  final bool Function() isOffline;
   final _uuid = const Uuid();
 
-  PosRepository({required this.db, required this.saleApi});
+  PosRepository({required this.db, required this.saleApi, bool Function()? isOffline})
+      : isOffline = isOffline ?? (() => false);
 
   Future<SaleRecordResult> recordSale({
     required List<CartItem> items,
     required String paymentMethod,
+    String? cashierId,
     String? cashierName,
   }) async {
+    final local = db;
     final clientTxnId = 'pos-${_uuid.v4()}';
-    final itemPayload = items
-        .map((i) => {
-              'productId': i.product.id,
-              'quantity': i.quantity,
-              'name': i.product.name,
-              'unitPrice': i.product.price,
-            })
-        .toList();
+    final soldAt = DateTime.now();
+    if (local == null) {
+      await saleApi.recordSale(clientTxnId: clientTxnId, items: _serverItems(items), paymentMethod: paymentMethod);
+      return SaleRecordResult(SaleRecordOutcome.syncedOnline, clientTxnId);
+    }
+
+    // A cart can outlive a sync, so resolve products created offline first.
+    final lines = [for (final item in items) (await local.resolveProductId(item.product.id), item)];
+    final queue = lines.any((l) => isLocalProductId(l.$1)) || isOffline();
+    if (queue) return _queueSale(local, clientTxnId, soldAt, lines, paymentMethod, cashierId, cashierName);
 
     try {
       final responseData = await saleApi.recordSale(
         clientTxnId: clientTxnId,
-        items: items
-            .map((i) => {'product': i.product.id, 'quantity': i.quantity})
-            .toList(),
+        items: [for (final (id, item) in lines) {'product': id, 'quantity': item.quantity}],
         paymentMethod: paymentMethod,
       );
-
-      if (db != null) {
-        for (final item in items) {
-          await db!.applyLocalStockDelta(item.product.id, -item.quantity);
-        }
-        // Cache the confirmed sale for the offline Daily Sale view.
-        final saleData = responseData['sale'] as Map<String, dynamic>?;
-        if (saleData != null) {
-          try {
-            await db!.upsertLocalSale(Sale.fromJson(saleData));
-          } catch (_) {
-            // Best-effort — a cache write failure must not break the sale.
-          }
-        } else {
-          // Server didn't return the full sale body — store a local stub so
-          // the Daily Sale tab still shows the transaction.
-          await db!.upsertLocalSale(
-            _buildPendingSale(clientTxnId, items, paymentMethod, cashierName),
-            pending: false,
-          );
-        }
+      for (final (id, item) in lines) {
+        await local.applyLocalStockDelta(id, -item.quantity);
+      }
+      // Cache the confirmed sale for the offline Daily Sale view.
+      try {
+        await local.upsertLocalSale(Sale.fromJson(responseData['sale'] as Map<String, dynamic>));
+      } catch (_) {
+        // The sale itself succeeded; the next sync brings the cached copy in.
       }
       return SaleRecordResult(SaleRecordOutcome.syncedOnline, clientTxnId);
     } on ApiException catch (e) {
-      if (!e.isNetworkError || db == null) {
-        rethrow; // real rejection, or no local queue to fall back to
+      if (!e.isServerDown) rethrow; // a real rejection, e.g. out of stock
+      return _queueSale(local, clientTxnId, soldAt, lines, paymentMethod, cashierId, cashierName);
+    }
+  }
+
+  static List<Map<String, dynamic>> _serverItems(List<CartItem> items) =>
+      [for (final i in items) {'product': i.product.id, 'quantity': i.quantity}];
+
+  Future<SaleRecordResult> _queueSale(
+    AppDatabase local,
+    String clientTxnId,
+    DateTime soldAt,
+    List<(String, CartItem)> lines,
+    String paymentMethod,
+    String? cashierId,
+    String? cashierName,
+  ) async {
+    // The server can't check stock offline, so hold the same line locally.
+    for (final (id, item) in lines) {
+      final row = await local.productById(id);
+      if (row != null && !row.isMadeToOrder && row.currentStock < item.quantity) {
+        throw ApiException('Insufficient stock for ${row.name} (have ${row.currentStock}, need ${item.quantity})');
       }
-      for (final item in items) {
-        await db!.applyLocalStockDelta(item.product.id, -item.quantity);
+    }
+    await local.transaction(() async {
+      for (final (id, item) in lines) {
+        await local.applyLocalStockDelta(id, -item.quantity);
       }
-      await db!.queueSale(
+      await local.queueSale(
         clientTxnId: clientTxnId,
-        items: itemPayload,
+        items: [
+          for (final (id, item) in lines)
+            {'productId': id, 'quantity': item.quantity, 'name': item.product.name, 'unitPrice': item.product.price},
+        ],
         paymentMethod: paymentMethod,
+        createdAt: soldAt,
+        cashierId: cashierId,
+        cashierName: cashierName,
       );
-      // Store as pending in the local sales cache so it appears in the
-      // Daily Sale tab immediately even before syncing to the server.
-      await db!.upsertLocalSale(
-        _buildPendingSale(clientTxnId, items, paymentMethod, cashierName),
+      // Pending in the local sales cache, so it shows in the Daily Sale tab
+      // and daily records straight away.
+      await local.upsertLocalSale(
+        _buildPendingSale(clientTxnId, soldAt, lines, paymentMethod, cashierId, cashierName),
         pending: true,
       );
-      return SaleRecordResult(SaleRecordOutcome.queuedOffline, clientTxnId);
-    }
+    });
+    return SaleRecordResult(SaleRecordOutcome.queuedOffline, clientTxnId);
   }
 
   /// Construct a [Sale] from cart data for immediate local storage when the
@@ -103,23 +125,25 @@ class PosRepository {
   /// confirms the sale.
   static Sale _buildPendingSale(
     String clientTxnId,
-    List<CartItem> items,
+    DateTime soldAt,
+    List<(String, CartItem)> lines,
     String paymentMethod,
+    String? cashierId,
     String? cashierName,
   ) {
-    final now = DateTime.now();
-    final lineItems = items
-        .map((i) => SaleLineItem(
-              productId: i.product.id,
-              name: i.product.name,
-              sku: i.product.sku,
-              imageUrl: i.product.imageUrl,
-              category: i.product.category,
-              unitPrice: i.product.price,
-              quantity: i.quantity.toDouble(),
-              lineTotal: i.product.price * i.quantity,
-            ))
-        .toList();
+    final lineItems = [
+      for (final (id, item) in lines)
+        SaleLineItem(
+          productId: id,
+          name: item.product.name,
+          sku: item.product.sku,
+          imageUrl: item.product.imageUrl,
+          category: item.product.category,
+          unitPrice: item.product.price,
+          quantity: item.quantity.toDouble(),
+          lineTotal: item.product.price * item.quantity,
+        ),
+    ];
     final total = lineItems.fold(0.0, (s, i) => s + i.lineTotal);
     return Sale(
       id: clientTxnId,
@@ -130,8 +154,9 @@ class PosRepository {
       taxAmount: 0,
       total: total,
       paymentMethod: paymentMethod,
-      createdAt: now,
+      createdAt: soldAt,
       recordedOffline: true,
+      cashierId: cashierId,
       cashierName: cashierName,
     );
   }

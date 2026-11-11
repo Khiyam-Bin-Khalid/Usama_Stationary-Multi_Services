@@ -10,6 +10,23 @@ class SyncApi {
         return List<Map<String, dynamic>>.from(res.data['results']);
       });
 
+  /// Applies one queued offline product change. Idempotent by [opId].
+  Future<Map<String, dynamic>> applyOp({
+    required String opId,
+    required String type,
+    String? productId,
+    required Map<String, dynamic> payload,
+  }) =>
+      guarded(() async {
+        final res = await client.dio.post('/sync/ops', data: {
+          'opId': opId,
+          'type': type,
+          if (productId != null) 'productId': productId,
+          'payload': payload,
+        });
+        return Map<String, dynamic>.from(res.data);
+      });
+
   Future<Map<String, dynamic>> pullDeltas(DateTime? since) => guarded(() async {
         final res = await client.dio.get('/sync/pull', queryParameters: {
           if (since != null) 'since': since.toIso8601String(),

@@ -6,6 +6,8 @@ import '../../core/providers.dart';
 import '../../core/roles.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/status_style.dart';
+import '../../data/remote/api_client.dart';
+import '../reports/records_providers.dart';
 
 final dashboardProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) => ref.watch(reportApiProvider).dashboard());
 
@@ -24,7 +26,9 @@ class DashboardScreen extends ConsumerWidget {
       onRefresh: () async => ref.invalidate(dashboardProvider),
       child: dataAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => ListView(children: [Padding(padding: const EdgeInsets.all(24), child: Text('Could not load dashboard: $e'))]),
+        error: (e, _) => e is ApiException && e.isServerDown && ref.watch(localDbAvailableProvider)
+            ? const _OfflineDashboard()
+            : ListView(children: [Padding(padding: const EdgeInsets.all(24), child: Text('Could not load dashboard: $e'))]),
         data: (data) {
           final body = switch (role) {
             UserRole.superadmin => _SuperAdminDashboard(data: data),
@@ -55,6 +59,58 @@ class DashboardScreen extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------- Offline
+
+/// What the device can answer by itself: today's takings and stock health
+/// from the local records, for any role, so the landing screen works offline.
+class _OfflineDashboard extends ConsumerWidget {
+  const _OfflineDashboard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authStateProvider).valueOrNull;
+    final role = user?.role ?? UserRole.staff;
+    final isStaff = role == UserRole.staff;
+    final sales = ref.watch(recordSalesProvider).valueOrNull ?? const [];
+    final products = ref.watch(recordProductsProvider).valueOrNull ?? const [];
+    final mine = isStaff ? sales.where((s) => s.cashierId == user?.id) : sales;
+    final today = summariseByDay(mine.where((s) => isToday(s.createdAt))).firstOrNull;
+    final low = products.where((p) => p.isLowStock).length;
+    final out = products.where((p) => p.isActive && p.isOutOfStock).length;
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Text('Hello, ${user?.name ?? ''}', style: Theme.of(context).textTheme.headlineSmall),
+        Text('${UserRole.label(role)} · working offline · ${formatDateTime(DateTime.now())}', style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 20),
+        _StatGrid(tiles: [
+          _StatTile(label: isStaff ? 'My revenue today' : "Today's revenue", value: formatCurrency(today?.revenue ?? 0), icon: Icons.payments_outlined, accent: AppColors.success),
+          _StatTile(label: 'Sales today', value: '${today?.invoices ?? 0}', icon: Icons.point_of_sale),
+          _StatTile(label: 'Items sold today', value: formatQuantity(today?.itemsSold ?? 0), icon: Icons.shopping_bag_outlined),
+          _StatTile(label: 'Not synced today', value: '${today?.notSynced ?? 0}', icon: Icons.cloud_upload_outlined, route: '/sync'),
+          _StatTile(label: 'Low stock', value: '$low', icon: Icons.warning_amber_outlined, accent: low > 0 ? AppColors.accentRed : null, route: '/inventory/low-stock'),
+          _StatTile(label: 'Sold out', value: '$out', icon: Icons.remove_shopping_cart_outlined, accent: out > 0 ? AppColors.accentRed : null, route: '/inventory/low-stock'),
+        ]),
+        const SizedBox(height: 24),
+        const _SectionTitle('Available offline'),
+        const SizedBox(height: 8),
+        _QuickActions(actions: [
+          const _Action('New sale', Icons.point_of_sale, '/pos', primary: true),
+          _Action(isStaff ? 'Check stock' : 'Products & stock', Icons.inventory_2_outlined, '/inventory'),
+          if (Permissions.consolidatedReports(role)) const _Action('Daily records', Icons.table_chart_outlined, '/records'),
+          const _Action('Sync queue', Icons.cloud_upload_outlined, '/sync'),
+        ]),
+        const SizedBox(height: 16),
+        Text(
+          'Orders, payments, promotions, staff accounts and shifts need a connection to the server.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
     );
   }
 }
@@ -126,6 +182,7 @@ class _AdminDashboard extends StatelessWidget {
           _Action('Payments', Icons.receipt_long_outlined, '/admin/payments'),
           _Action('Promotions', Icons.local_offer_outlined, '/admin/promotions'),
           _Action('Reports', Icons.bar_chart_outlined, '/reports'),
+          _Action('Daily records', Icons.table_chart_outlined, '/records'),
         ]),
         const SizedBox(height: 24),
         _CategoryBreakdown(data: data),
@@ -164,6 +221,7 @@ class _SuperAdminDashboard extends StatelessWidget {
           _Action('Inventory', Icons.inventory_2_outlined, '/inventory'),
           _Action('Orders', Icons.local_shipping_outlined, '/admin/orders'),
           _Action('Reports', Icons.bar_chart_outlined, '/reports'),
+          _Action('Daily records', Icons.table_chart_outlined, '/records'),
         ]),
         const SizedBox(height: 24),
         _CategoryBreakdown(data: data),

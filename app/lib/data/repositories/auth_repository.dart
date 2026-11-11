@@ -1,30 +1,36 @@
 import 'dart:convert';
-import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../core/roles.dart';
 import '../models/user.dart';
 import '../remote/api_client.dart';
 import '../remote/auth_api.dart';
 import '../remote/token_storage.dart';
+import 'offline_credentials.dart';
 
 /// Authentication repository with offline-first login support.
 ///
-/// **First online login**: credentials are verified by the server. On success
-/// the access/refresh tokens, user profile and a local HMAC credential hash
-/// are persisted on-device via [TokenStorage].
+/// **Online login**: the server verifies the credentials. For staff accounts
+/// (Super Admin, Admin, Staff) on desktop/mobile the tokens, profile and a
+/// salted password hash are also stored in the device's offline vault, one
+/// entry per account, so anyone who has signed in here can sign in offline.
 ///
-/// **App restart while offline**: [currentUser] returns the cached user profile
-/// (because the device still has a stored token and the profile JSON), so the
-/// user never sees the login screen just because connectivity dropped.
+/// **App restart while offline**: [currentUser] returns the cached profile, so
+/// the user never sees the login screen just because connectivity dropped.
 ///
-/// **Explicit offline login** (user typed credentials on the login screen while
-/// offline): the HMAC of the entered credentials is compared against the
-/// stored hash. If it matches, the previously cached profile is restored —
-/// the user gets right back in with the stale tokens; the first API call when
-/// connectivity returns will refresh them transparently.
+/// **Offline login**: when the server can't be reached, the password is checked
+/// against the vault. The selected role must match, repeated wrong passwords
+/// lock the account for a few minutes, and an account the server hasn't seen
+/// for [offlineValidity] must connect again.
 class AuthRepository {
   final AuthApi authApi;
   final TokenStorage tokenStorage;
+  final DateTime Function() _now;
 
-  AuthRepository({required this.authApi, required this.tokenStorage});
+  static const offlineValidity = Duration(days: 30);
+  static const maxFailedAttempts = 5;
+  static const lockDuration = Duration(minutes: 5);
+
+  AuthRepository({required this.authApi, required this.tokenStorage, DateTime Function()? now}) : _now = now ?? DateTime.now;
 
   Future<AppUser> login(String email, String password, {String? role}) async {
     try {
@@ -34,17 +40,15 @@ class AuthRepository {
         refreshToken: result.refreshToken,
         role: result.user.role,
       );
-      await tokenStorage.saveUserProfile(
-        userJson: jsonEncode(_userToJson(result.user)),
-        credentialHash: _credentialHash(email, password),
-      );
+      await tokenStorage.saveUserProfile(jsonEncode(_userToJson(result.user)));
+      await _rememberForOffline(email, password, result.user, result.accessToken, result.refreshToken);
       return result.user;
     } on ApiException catch (e) {
-      if (!e.isNetworkError) rethrow;
-      // Offline path — verify against stored credential hash.
-      final cached = await _tryOfflineLogin(email, password);
-      if (cached != null) return cached;
-      rethrow; // no cached credentials → propagate the network error
+      // The server says these credentials are no longer good (password changed,
+      // account disabled): the old offline copy must stop working too.
+      if (e.statusCode == 401) await tokenStorage.removeOfflineAccount(email);
+      if (!e.isServerDown || kIsWeb) rethrow;
+      return _offlineLogin(email, password, role);
     }
   }
 
@@ -65,10 +69,7 @@ class AuthRepository {
       refreshToken: result.refreshToken,
       role: result.user.role,
     );
-    await tokenStorage.saveUserProfile(
-      userJson: jsonEncode(_userToJson(result.user)),
-      credentialHash: _credentialHash(email, password),
-    );
+    await tokenStorage.saveUserProfile(jsonEncode(_userToJson(result.user)));
     return result.user;
   }
 
@@ -77,32 +78,26 @@ class AuthRepository {
   /// - If the user explicitly logged out → null.
   /// - If no token → null.
   /// - If the API call succeeds → fresh user object (cached profile updated).
-  /// - If network unreachable + token present → cached profile (offline mode).
-  /// - Any other error → null.
+  /// - If the server is unreachable + token present → cached profile.
+  /// - If the server rejects the session → null.
   Future<AppUser?> currentUser() async {
     if (await tokenStorage.isLoggedOut) return null;
     final token = await tokenStorage.accessToken;
     if (token == null) return null;
     try {
       final user = await authApi.me();
-      // Keep the cached profile fresh so offline re-login has the latest data.
-      final existingHash = await tokenStorage.credentialHash;
-      await tokenStorage.saveUserProfile(
-        userJson: jsonEncode(_userToJson(user)),
-        credentialHash: existingHash ?? '',
-      );
+      final userJson = jsonEncode(_userToJson(user));
+      await tokenStorage.saveUserProfile(userJson);
+      final account = await tokenStorage.offlineAccount(user.email);
+      if (account != null) {
+        await tokenStorage.saveOfflineAccount(user.email, account.copyWith(profileJson: userJson, verifiedAt: _now()));
+      }
       return user;
     } on ApiException catch (e) {
-      if (!e.isNetworkError) return null;
-      // Network error — return the locally-cached profile so the app keeps
-      // working without forcing the user back to the login screen.
-      final profileJson = await tokenStorage.userProfileJson;
-      if (profileJson == null) return null;
-      try {
-        return AppUser.fromJson(jsonDecode(profileJson) as Map<String, dynamic>);
-      } catch (_) {
-        return null;
-      }
+      if (e.isServerDown) return _cachedProfile();
+      final cached = await _cachedProfile();
+      if (cached != null) await tokenStorage.removeOfflineAccount(cached.email);
+      return null;
     } catch (_) {
       return null;
     }
@@ -112,33 +107,74 @@ class AuthRepository {
 
   // ── Private helpers ─────────────────────────────────────────────────────────
 
-  /// Attempt an offline login by comparing the entered credentials against
-  /// the locally-stored HMAC hash. Returns the cached [AppUser] on success.
-  Future<AppUser?> _tryOfflineLogin(String email, String password) async {
-    final storedHash = await tokenStorage.credentialHash;
-    if (storedHash == null || storedHash.isEmpty) return null;
-    if (_credentialHash(email, password) != storedHash) return null;
+  Future<AppUser?> _cachedProfile() async {
     final profileJson = await tokenStorage.userProfileJson;
     if (profileJson == null) return null;
     try {
-      final user = AppUser.fromJson(
-        jsonDecode(profileJson) as Map<String, dynamic>,
-      );
-      // Restore the session flag so currentUser() returns the profile offline.
-      await tokenStorage.markActive();
-      return user;
+      return AppUser.fromJson(jsonDecode(profileJson) as Map<String, dynamic>);
     } catch (_) {
       return null;
     }
   }
 
-  /// HMAC-SHA256 of the normalised email + password using a fixed app-level
-  /// key. Good enough for a POS running on a controlled device; for a public
-  /// app you'd want PBKDF2 with a per-device salt.
-  static String _credentialHash(String email, String password) {
-    final key = utf8.encode('usama-pos-offline-v1');
-    final msg = utf8.encode('${email.toLowerCase().trim()}:$password');
-    return Hmac(sha256, key).convert(msg).toString();
+  Future<void> _rememberForOffline(String email, String password, AppUser user, String accessToken, String refreshToken) async {
+    if (kIsWeb || !UserRole.staffRoles.contains(user.role)) return;
+    final salt = OfflineCredentials.newSalt();
+    await tokenStorage.saveOfflineAccount(
+      email,
+      OfflineAccount(
+        salt: salt,
+        hash: await OfflineCredentials.hash(password, salt, OfflineCredentials.iterations),
+        iterations: OfflineCredentials.iterations,
+        profileJson: jsonEncode(_userToJson(user)),
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        verifiedAt: _now(),
+      ),
+    );
+  }
+
+  Future<AppUser> _offlineLogin(String email, String password, String? role) async {
+    final account = await tokenStorage.offlineAccount(email);
+    if (account == null) {
+      throw ApiException('Can\'t reach the server, and this account hasn\'t signed in on this device yet. '
+          'Connect to the internet and sign in once to enable offline login.');
+    }
+    final now = _now();
+    final lockedUntil = account.lockedUntil;
+    if (lockedUntil != null && now.isBefore(lockedUntil)) {
+      final minutes = lockedUntil.difference(now).inMinutes + 1;
+      throw ApiException('Too many wrong passwords. Try again in $minutes minute(s).');
+    }
+    if (now.difference(account.verifiedAt) > offlineValidity) {
+      throw ApiException('Offline access for this account has expired. Connect to the internet and sign in.');
+    }
+
+    final hash = await OfflineCredentials.hash(password, account.salt, account.iterations);
+    if (!OfflineCredentials.matches(hash, account.hash)) {
+      final failed = account.failedAttempts + 1;
+      final locked = failed >= maxFailedAttempts;
+      await tokenStorage.saveOfflineAccount(
+        email,
+        locked ? account.copyWith(failedAttempts: 0, lockedUntil: now.add(lockDuration)) : account.copyWith(failedAttempts: failed, clearLock: true),
+      );
+      throw ApiException('Invalid email or password');
+    }
+
+    final user = AppUser.fromJson(jsonDecode(account.profileJson) as Map<String, dynamic>);
+    // Same rule as the server: the picked role must be the account's real role.
+    if (role != null && role != user.role) {
+      throw ApiException('This account is registered as ${user.role}, not $role. Select the correct role to sign in.');
+    }
+
+    if (account.failedAttempts != 0 || lockedUntil != null) {
+      await tokenStorage.saveOfflineAccount(email, account.copyWith(failedAttempts: 0, clearLock: true));
+    }
+    // Make this account's tokens the active ones, so the next sync runs as the
+    // person actually at the counter rather than whoever was here before.
+    await tokenStorage.save(accessToken: account.accessToken, refreshToken: account.refreshToken, role: user.role);
+    await tokenStorage.saveUserProfile(account.profileJson);
+    return user;
   }
 
   static Map<String, dynamic> _userToJson(AppUser u) => {

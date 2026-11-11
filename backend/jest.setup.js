@@ -12,6 +12,10 @@ process.env.NODE_ENV = 'test';
 // so deleting them would let dotenv repopulate from the real .env file.)
 process.env.SUPERADMIN_EMAIL = '';
 process.env.SUPERADMIN_PASSWORD = '';
+// Never upload test fixtures to the real Cloudinary account from backend/.env.
+process.env.CLOUDINARY_CLOUD_NAME = '';
+process.env.CLOUDINARY_API_KEY = '';
+process.env.CLOUDINARY_API_SECRET = '';
 
 let mongod;
 

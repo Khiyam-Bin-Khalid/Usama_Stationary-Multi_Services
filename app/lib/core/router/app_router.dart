@@ -13,7 +13,9 @@ import '../../features/pos/pos_screen.dart';
 import '../../features/inventory/inventory_screen.dart';
 import '../../features/inventory/discrepancies_screen.dart';
 import '../../features/inventory/stock_movements_screen.dart';
+import '../../features/reports/daily_records_screen.dart';
 import '../../features/reports/reports_screen.dart';
+import '../../features/sync/sync_screen.dart';
 import '../../features/shift/shift_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/admin/staff_management_screen.dart';
@@ -35,7 +37,7 @@ import '../../features/orders/order_detail_screen.dart';
 const _posHome = '/dashboard';
 const _shopHome = '/shop';
 
-const _posAreaPrefixes = ['/dashboard', '/pos', '/inventory', '/reports', '/shift', '/notifications', '/admin', '/settings'];
+const _posAreaPrefixes = ['/dashboard', '/pos', '/inventory', '/reports', '/records', '/sync', '/shift', '/notifications', '/admin', '/settings'];
 const _shopAreaPrefixes = ['/shop', '/cart', '/checkout', '/orders', '/profile'];
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -87,6 +89,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path: '/inventory/discrepancies', builder: (context, state) => const DiscrepanciesScreen()),
           GoRoute(path: '/reports', builder: (context, state) => const ReportsScreen()),
+          GoRoute(path: '/records', builder: (context, state) => const DailyRecordsScreen()),
+          GoRoute(path: '/sync', builder: (context, state) => const SyncScreen()),
           GoRoute(path: '/shift', builder: (context, state) => const ShiftScreen()),
           GoRoute(path: '/notifications', builder: (context, state) => const NotificationsScreen()),
           GoRoute(

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Wraps flutter_secure_storage; on web it falls back to browser storage
@@ -11,6 +12,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 ///   2. Allow offline re-login by verifying against a stored credential hash.
 /// Once back online the normal token-refresh interceptor refreshes (or clears)
 /// the tokens automatically.
+///
+/// Offline accounts live in a separate vault ([offlineAccounts]) so several
+/// people can sign in on one shared counter device, and so an expired session
+/// never takes offline access away with it.
 class TokenStorage {
   final _storage = const FlutterSecureStorage();
 
@@ -21,7 +26,8 @@ class TokenStorage {
   // Offline-first keys
   static const _loggedOutKey = 'logged_out';
   static const _userProfileKey = 'user_profile_json';
-  static const _credHashKey = 'offline_cred_hash';
+  static const _legacyCredHashKey = 'offline_cred_hash';
+  static const _offlineAccountsKey = 'offline_accounts';
 
   // ── Token management ────────────────────────────────────────────────────────
 
@@ -57,11 +63,17 @@ class TokenStorage {
     ]);
   }
 
-  /// Hard wipe — removes everything including offline credential cache.
-  /// Used by the token-refresh interceptor when the refresh token itself
-  /// is rejected by the server, so we must force the user to log in online.
+  /// Ends the session completely. Used by the token-refresh interceptor when
+  /// the server rejects the refresh token, so the user must log in again. The
+  /// offline vault is kept: it has its own expiry.
   Future<void> clearAll() async {
-    await _storage.deleteAll();
+    await Future.wait([
+      _storage.delete(key: _accessKey),
+      _storage.delete(key: _refreshKey),
+      _storage.delete(key: _roleKey),
+      _storage.delete(key: _loggedOutKey),
+      _storage.delete(key: _userProfileKey),
+    ]);
   }
 
   // ── Offline auth helpers ─────────────────────────────────────────────────
@@ -77,21 +89,104 @@ class TokenStorage {
   Future<void> markActive() =>
       _storage.write(key: _loggedOutKey, value: 'false');
 
-  /// Persist the user's profile JSON and HMAC-based credential hash after a
-  /// successful online login so they can authenticate while offline later.
-  Future<void> saveUserProfile({
-    required String userJson,
-    required String credentialHash,
-  }) async {
-    await Future.wait([
-      _storage.write(key: _userProfileKey, value: userJson),
-      _storage.write(key: _credHashKey, value: credentialHash),
-    ]);
-  }
+  /// Persist the active user's profile so a restart works without a network.
+  Future<void> saveUserProfile(String userJson) => _storage.write(key: _userProfileKey, value: userJson);
 
   /// The cached user profile JSON, or null if never set.
   Future<String?> get userProfileJson => _storage.read(key: _userProfileKey);
 
-  /// The stored HMAC credential hash, or null if never set.
-  Future<String?> get credentialHash => _storage.read(key: _credHashKey);
+  // ── Offline account vault ───────────────────────────────────────────────
+
+  Future<Map<String, OfflineAccount>> offlineAccounts() async {
+    final raw = await _storage.read(key: _offlineAccountsKey);
+    if (raw == null) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, OfflineAccount.fromJson(v as Map<String, dynamic>)));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<OfflineAccount?> offlineAccount(String email) async => (await offlineAccounts())[normaliseEmail(email)];
+
+  Future<void> saveOfflineAccount(String email, OfflineAccount account) async {
+    final accounts = await offlineAccounts();
+    accounts[normaliseEmail(email)] = account;
+    await _writeAccounts(accounts);
+    await _storage.delete(key: _legacyCredHashKey);
+  }
+
+  Future<void> removeOfflineAccount(String email) async {
+    final accounts = await offlineAccounts();
+    if (accounts.remove(normaliseEmail(email)) != null) await _writeAccounts(accounts);
+  }
+
+  Future<void> _writeAccounts(Map<String, OfflineAccount> accounts) =>
+      _storage.write(key: _offlineAccountsKey, value: jsonEncode(accounts.map((k, v) => MapEntry(k, v.toJson()))));
+
+  static String normaliseEmail(String email) => email.trim().toLowerCase();
+}
+
+/// One staff account that has signed in online on this device. The password
+/// is only ever kept as a salted PBKDF2 hash.
+class OfflineAccount {
+  final String salt;
+  final String hash;
+  final int iterations;
+  final String profileJson;
+  final String accessToken;
+  final String refreshToken;
+  final DateTime verifiedAt; // last time the server accepted this account
+  final int failedAttempts;
+  final DateTime? lockedUntil;
+
+  const OfflineAccount({
+    required this.salt,
+    required this.hash,
+    required this.iterations,
+    required this.profileJson,
+    required this.accessToken,
+    required this.refreshToken,
+    required this.verifiedAt,
+    this.failedAttempts = 0,
+    this.lockedUntil,
+  });
+
+  OfflineAccount copyWith({int? failedAttempts, DateTime? lockedUntil, String? profileJson, DateTime? verifiedAt, bool clearLock = false}) =>
+      OfflineAccount(
+        salt: salt,
+        hash: hash,
+        iterations: iterations,
+        profileJson: profileJson ?? this.profileJson,
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        verifiedAt: verifiedAt ?? this.verifiedAt,
+        failedAttempts: failedAttempts ?? this.failedAttempts,
+        lockedUntil: clearLock ? null : (lockedUntil ?? this.lockedUntil),
+      );
+
+  factory OfflineAccount.fromJson(Map<String, dynamic> json) => OfflineAccount(
+        salt: json['salt'] as String,
+        hash: json['hash'] as String,
+        iterations: json['iterations'] as int,
+        profileJson: json['profileJson'] as String,
+        accessToken: json['accessToken'] as String,
+        refreshToken: json['refreshToken'] as String,
+        verifiedAt: DateTime.parse(json['verifiedAt'] as String),
+        failedAttempts: json['failedAttempts'] as int? ?? 0,
+        lockedUntil: json['lockedUntil'] == null ? null : DateTime.parse(json['lockedUntil'] as String),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'salt': salt,
+        'hash': hash,
+        'iterations': iterations,
+        'profileJson': profileJson,
+        'accessToken': accessToken,
+        'refreshToken': refreshToken,
+        'verifiedAt': verifiedAt.toIso8601String(),
+        'failedAttempts': failedAttempts,
+        if (lockedUntil != null) 'lockedUntil': lockedUntil!.toIso8601String(),
+      };
 }

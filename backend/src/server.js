@@ -3,8 +3,10 @@ const env = require('./config/env');
 const { connectDb } = require('./config/db');
 const { startLowStockJob } = require('./jobs/lowStockAlertJob');
 const { ensureDefaultCategories } = require('./services/categoryService');
+const { configureCloudinary } = require('./utils/cloudinary');
 
 async function start() {
+  configureCloudinary();
   await connectDb();
   console.log('Connected to MongoDB'); // eslint-disable-line no-console
   await ensureDefaultCategories();

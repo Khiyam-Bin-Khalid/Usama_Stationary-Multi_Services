@@ -29,6 +29,6 @@ class AppConfig {
 
   /// Product images may be a local `/uploads/xyz.png` path (served by our
   /// own backend) or a full Cloudinary URL (`https://res.cloudinary.com/...`)
-  /// — whichever `productImageService` on the backend picked at upload time.
+  /// — whichever `fileStorageService` on the backend picked at upload time.
   static String resolveMediaUrl(String path) => path.startsWith('http') ? path : '$mediaBaseUrl$path';
 }

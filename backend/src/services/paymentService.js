@@ -1,4 +1,4 @@
-const path = require('path');
+const { storeFile } = require('./fileStorageService');
 const Payment = require('../models/Payment');
 const Order = require('../models/Order');
 const AppError = require('../utils/AppError');
@@ -120,7 +120,7 @@ async function attachReceiptUpload({ orderId, customerId, file, note }) {
     throw new AppError(400, 'This payment has already been approved');
   }
 
-  const receiptImageUrl = `/uploads/${path.basename(file.path)}`;
+  const receiptImageUrl = await storeFile(file, { folder: 'receipts' });
   const payment = await Payment.findOneAndUpdate(
     { order: order._id },
     {

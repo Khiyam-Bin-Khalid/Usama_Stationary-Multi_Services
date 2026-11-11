@@ -41,6 +41,7 @@ class PosAdminShell extends ConsumerWidget {
       const _NavItem('/shift', Icons.schedule_outlined, 'Shifts'),
       if (Permissions.managePromotions(role)) const _NavItem('/admin/promotions', Icons.local_offer_outlined, 'Deals & promotions'),
       _NavItem('/reports', Icons.show_chart_outlined, isStaff ? 'My sales' : 'Reports'),
+      if (Permissions.consolidatedReports(role)) const _NavItem('/records', Icons.table_chart_outlined, 'Daily records'),
       if (Permissions.viewAuditLog(role)) const _NavItem('/admin/audit-log', Icons.history_outlined, 'Audit log'),
       const _NavItem('/notifications', Icons.notifications_outlined, 'Notifications'),
       const _NavItem('/settings', Icons.settings_outlined, 'Settings'),
@@ -54,7 +55,7 @@ class PosAdminShell extends ConsumerWidget {
     final items = _itemsFor(role);
     final location = GoRouterState.of(context).matchedLocation;
     // Longest-prefix match so /inventory/discrepancies selects its own entry.
-    var selectedIndex = 0;
+    var selectedIndex = -1; // stays -1 on screens without a nav entry (/sync)
     var bestLen = -1;
     for (var i = 0; i < items.length; i++) {
       final p = items[i].path;
@@ -75,6 +76,10 @@ class PosAdminShell extends ConsumerWidget {
       role: role,
       unread: unread,
       syncService: syncService,
+      onOpenSync: () {
+        if (!isWide) Navigator.of(context).pop();
+        context.go('/sync');
+      },
       onSelect: (i) {
         if (!isWide) Navigator.of(context).pop(); // close drawer
         context.go(items[i].path);
@@ -86,7 +91,7 @@ class PosAdminShell extends ConsumerWidget {
       appBar: isWide
           ? null
           : AppBar(
-              title: Text(items[selectedIndex].label),
+              title: Text(selectedIndex >= 0 ? items[selectedIndex].label : 'Sync queue'),
               actions: [
                 IconButton(
                   icon: Badge(label: Text('$unread'), isLabelVisible: unread > 0, child: const Icon(Icons.notifications_outlined)),
@@ -121,6 +126,7 @@ class _Sidebar extends StatelessWidget {
   final int unread;
   final SyncService? syncService;
   final void Function(int) onSelect;
+  final VoidCallback onOpenSync;
   final VoidCallback onLogout;
 
   const _Sidebar({
@@ -131,6 +137,7 @@ class _Sidebar extends StatelessWidget {
     required this.unread,
     required this.syncService,
     required this.onSelect,
+    required this.onOpenSync,
     required this.onLogout,
   });
 
@@ -206,7 +213,7 @@ class _Sidebar extends StatelessWidget {
             ),
           ),
           const Divider(),
-          if (syncService != null) _SyncIndicator(syncService: syncService!),
+          if (syncService != null) _SyncIndicator(syncService: syncService!, onTap: onOpenSync),
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
             child: SizedBox(
@@ -225,30 +232,39 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
-/// Small "synced with server" dot (success) / syncing (orange) / offline (red).
-class _SyncIndicator extends StatelessWidget {
+/// Sync dot (green only after a sync actually succeeded) plus how much is
+/// still waiting. Opens the sync queue.
+class _SyncIndicator extends ConsumerWidget {
   final SyncService syncService;
-  const _SyncIndicator({required this.syncService});
+  final VoidCallback onTap;
+  const _SyncIndicator({required this.syncService, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final waiting = ref.watch(unsyncedCountProvider).valueOrNull ?? 0;
     return StreamBuilder<SyncStatus>(
       stream: syncService.statusStream,
+      initialData: syncService.status,
       builder: (context, snapshot) {
-        final status = snapshot.data ?? SyncStatus.idle;
-        final (color, label) = switch (status) {
+        final (color, label) = switch (snapshot.data ?? syncService.status) {
           SyncStatus.idle => (AppColors.success, 'Synced with server'),
           SyncStatus.syncing => (AppColors.primaryOrange, 'Syncing…'),
-          SyncStatus.offline => (AppColors.accentRed, 'Offline — queuing sales'),
+          SyncStatus.offline => (AppColors.accentRed, 'Offline — saving on this device'),
+          SyncStatus.authRequired => (AppColors.accentRed, 'Sign in again to sync'),
+          SyncStatus.error => (AppColors.accentRed, 'Sync problem'),
         };
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 10, 16, 4),
-          child: Row(
-            children: [
-              StatusDot(color: color),
-              const SizedBox(width: 8),
-              Expanded(child: Text(label, style: Theme.of(context).textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis)),
-            ],
+        return InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 16, 4),
+            child: Row(
+              children: [
+                StatusDot(color: color),
+                const SizedBox(width: 8),
+                Expanded(child: Text(label, style: Theme.of(context).textTheme.labelSmall, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                if (waiting > 0) Badge(label: Text('$waiting'), backgroundColor: AppColors.primaryOrange),
+              ],
+            ),
           ),
         );
       },
@@ -264,20 +280,29 @@ class _SyncBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<SyncStatus>(
       stream: syncService.statusStream,
+      initialData: syncService.status,
       builder: (context, snapshot) {
-        if (snapshot.data != SyncStatus.offline) return const SizedBox.shrink();
+        final message = switch (snapshot.data) {
+          SyncStatus.offline => 'Offline — sales and stock changes are saved on this device and will sync automatically',
+          SyncStatus.authRequired => 'Your session expired — log out and sign in again so this device can sync',
+          SyncStatus.error => 'Sync problem: ${syncService.lastError ?? 'unknown error'}',
+          _ => null,
+        };
+        if (message == null) return const SizedBox.shrink();
         return Container(
           width: double.infinity,
           color: AppColors.tint(AppColors.accentRed),
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_off, size: 16, color: AppColors.accentRed),
-              SizedBox(width: 8),
-              Text(
-                'Offline — sales are being saved locally and will sync automatically',
-                style: TextStyle(color: AppColors.accentRed, fontSize: 12, fontWeight: FontWeight.w600),
+              const Icon(Icons.cloud_off, size: 16, color: AppColors.accentRed),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  message,
+                  style: const TextStyle(color: AppColors.accentRed, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
               ),
             ],
           ),

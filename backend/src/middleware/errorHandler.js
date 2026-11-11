@@ -1,3 +1,4 @@
+const multer = require('multer');
 const AppError = require('../utils/AppError');
 
 function notFoundHandler(req, res) {
@@ -7,6 +8,11 @@ function notFoundHandler(req, res) {
 function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-vars
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({ error: err.message, details: err.details });
+  }
+
+  if (err instanceof multer.MulterError) {
+    const message = err.code === 'LIMIT_FILE_SIZE' ? 'File is too large' : err.message;
+    return res.status(400).json({ error: message });
   }
 
   if (err.name === 'ValidationError') {

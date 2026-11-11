@@ -1,24 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
-import '../../data/local/app_database.dart';
 import '../../data/models/product.dart';
-
-Product productFromCache(ProductsCacheData row) => Product(
-      id: row.id,
-      name: row.name,
-      sku: row.sku,
-      barcode: row.barcode,
-      imageUrl: row.imageUrl,
-      category: row.category,
-      unit: row.unit,
-      price: row.price,
-      costPrice: row.costPrice,
-      currentStock: row.currentStock,
-      reorderThreshold: row.reorderThreshold,
-      isMadeToOrder: row.isMadeToOrder,
-      isAvailableOnline: row.isAvailableOnline,
-      isActive: row.isActive,
-    );
+import '../../data/repositories/inventory_repository.dart';
 
 /// Product list for the POS quick-sell grid: streamed from the local drift
 /// cache (works offline) on native platforms, or fetched from the API on web.

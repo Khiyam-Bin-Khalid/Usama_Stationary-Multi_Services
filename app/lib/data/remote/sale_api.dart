@@ -28,18 +28,31 @@ class SaleApi {
 
   /// Staff get only their own transactions (server-side scoped); Admin /
   /// Super Admin see everyone's — used by the Daily Sale tab.
-  Future<List<Sale>> listSales({DateTime? from, DateTime? to}) =>
-      guarded(() async {
+  Future<List<Sale>> listSales({DateTime? from, DateTime? to}) => _page(from, to, 1);
+
+  /// Every sale in the window, for the month of daily records on the device.
+  /// The API caps a page at [_pageSize], so a busy month spans several pages.
+  Future<List<Sale>> listAllSales({DateTime? from, DateTime? to}) async {
+    final all = <Sale>[];
+    for (var page = 1;; page++) {
+      final sales = await _page(from, to, page);
+      all.addAll(sales);
+      if (sales.length < _pageSize) return all;
+    }
+  }
+
+  static const _pageSize = 200;
+
+  Future<List<Sale>> _page(DateTime? from, DateTime? to, int page) => guarded(() async {
         final res = await client.dio.get(
           '/sales',
           queryParameters: {
-            if (from != null) 'from': from.toIso8601String(),
-            if (to != null) 'to': to.toIso8601String(),
-            'limit': 200,
+            if (from != null) 'from': from.toUtc().toIso8601String(),
+            if (to != null) 'to': to.toUtc().toIso8601String(),
+            'limit': _pageSize,
+            'page': page,
           },
         );
-        return (res.data['sales'] as List)
-            .map((e) => Sale.fromJson(e as Map<String, dynamic>))
-            .toList();
+        return (res.data['sales'] as List).map((e) => Sale.fromJson(e as Map<String, dynamic>)).toList();
       });
 }
